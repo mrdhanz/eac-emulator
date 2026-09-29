@@ -1,79 +1,105 @@
-> [!WARNING]
-> This guide is outdated and unsupported! Please DO NOT follow this guide.
+# Setup Guide — WSL2 with Proton
 
-# WSL side
+This guide explains how to set up and run the EOS / EAC Emulator using Windows Subsystem for Linux (WSL2) with Proton and your Windows host.
 
-## Install Steam
+---
 
-```shell
+## 1. Building the Project
+
+Before setting up the environments, build both components using Visual Studio 2022 on Windows:
+
+1. Open [EOSEmulator.sln](file:///e:/Project/eac-emulator/EOSEmulator.sln) in Visual Studio 2022.
+2. Select **Release | x64**.
+3. Build the solution (`Ctrl+Shift+B` or run `msbuild EOSEmulator.sln /p:Configuration=Release /p:Platform=x64`).
+4. Output binaries will be in the `bin\Release\` folder:
+   - `EOSSDK-Win64-Shipping.dll` (for Windows client)
+   - `version.dll` (for Linux / WSL Proton host)
+
+---
+
+## 2. WSL Environment Setup
+
+Ensure WSL2 with Ubuntu (22.04 or 24.04) is installed on your Windows machine.
+
+### Install Steam & Dependencies in WSL
+Open your WSL terminal and execute:
+
+```bash
+# Download proton launch helper
 wget https://gist.githubusercontent.com/thingsiplay/3a933f557277906dc6b0e03ec8df5dbd/raw/b406b32604dfb63b83d80f5bbaafd80d09f69822/proton -O proton.sh
 chmod +x proton.sh
-mkdir proton
+
+# Enable 32-bit architecture and install Steam
 sudo add-apt-repository multiverse
 sudo dpkg --add-architecture i386
 sudo apt update
 sudo apt upgrade -y
-sudo apt install steam
+sudo apt install steam -y
 steam
 ```
 
-## Setup VRChat
+### Configure Steam & Install Target Game
+1. In Steam on WSL, go to **Steam -> Settings -> Compatibility**.
+2. Check **Enable Steam Play for supported titles** and **Enable Steam Play for all other titles** (select **Proton Experimental** or **Proton Hotfix**).
+3. Install your target game (e.g. SpiritVale or VRChat) and run it once to initialize the Proton prefix.
 
-Install the Steam app on your WSL, open its settings, and enable `Steam Play` for all titles.
+---
 
-You can find this option by navigating to `Steam -> Settings -> Compatibility`. Check the box for `Enable Steam Play for all other titles`.
+## 3. Configure the Linux / WSL Side
 
-Then, install VRChat on your WSL and please launch it at least once.
+### Place the Bootstrapper DLL
+Copy the built `version.dll` from your Windows build output into the target game directory on WSL:
+```bash
+# Path typically: ~/.steam/steam/steamapps/common/<GameFolder>/
+cp /mnt/e/Project/eac-emulator/bin/Release/version.dll ~/.steam/steam/steamapps/common/<GameFolder>/
+```
 
-## Place bootstrapper File
-
-Place the `version.dll` file that you built into the same directory as the `VRChat.exe` file.
-
-You can find the VRChat executable file at `~/.steam/steam/steamapps/common/VRChat`.
-
-## Edit ~/proton.sh
-
-Set `proton_version` to the name of the folder starting with `Proton` located in `~/.steam/steam/steamapps/common`.
-
-Set `client_dir` to `"$HOME/.steam/steam"`.
-
-Example:
-
-```shell
-proton_version="Proton Hotfix"
+### Configure Proton Launch Script
+Edit `~/proton.sh` to match your installed Proton version and Steam directory:
+```bash
+proton_version="Proton Hotfix" # or "Proton Experimental"
 client_dir="$HOME/.steam/steam"
 ```
 
-## Run VRChat
-
-Run this command to launch VRChat:
-
-```shell
-WINEDLLOVERRIDES="version.dll=n,b" ~/proton.sh ~/.steam/steam/steamapps/common/VRChat/launch.exe
+### Launch the Linux Server Component
+Launch the game inside WSL with Wine DLL override enabled so Proton loads our `version.dll`:
+```bash
+WINEDLLOVERRIDES="version.dll=n,b" ~/proton.sh ~/.steam/steam/steamapps/common/<GameFolder>/<GameExecutable>.exe
 ```
+> [!TIP]
+> You can create a bash script (e.g. `launch_emulator.sh`) to automate this command.
 
-Creating a bash script, such as launchVRChat.sh, will make launching easier.
+Once running, `version.dll` starts an HTTP server on port 7778 and a WebSocket server on port 7777 to handle forwarded EOS API and EAC requests.
 
-# Windows side
+---
 
-Simply copy the `EOSSDK-Win64-Shipping.dll` file that you built to the `VRChat\VRChat_Data\Plugins\x86_64` directory.
+## 4. Configure the Windows Client
 
-Then, launch `VRChat.exe` directly from File Explorer. A configuration file named `config.json` will be generated.
+1. Copy the built `EOSSDK-Win64-Shipping.dll` to your Windows game installation's plugin directory:
+   ```text
+   <GameDirectory>\<GameName>_Data\Plugins\x86_64\EOSSDK-Win64-Shipping.dll
+   ```
+   *(e.g., `SpiritVale_Data\Plugins\x86_64\EOSSDK-Win64-Shipping.dll` or `VRChat_Data\Plugins\x86_64\EOSSDK-Win64-Shipping.dll`)*
 
-Please edit the `ip` property to `127.0.0.1`.
+2. Launch `<GameExecutable>.exe` directly on Windows once. This will generate a default configuration file named `config.json` next to the executable.
 
-```json
-{
-    "ip": "127.0.0.1", // <-- Here
-    "ports": {
-        "http": 7778,
-        "tcp": 7777
-    }
-}
-```
+3. Open `config.json` in a text editor and ensure the IP address points to your WSL instance:
+   ```json
+   {
+       "ip": "127.0.0.1",
+       "ports": {
+           "http": 7778,
+           "tcp": 7777
+       }
+   }
+   ```
+   > [!NOTE]
+   > With WSL2 localhost forwarding (default), `127.0.0.1` connects directly to WSL services. If you have custom networking or NAT enabled, use the WSL IP obtained via `ip addr show eth0`.
 
-And you are ready to go! 🎉
+---
 
-Launch “VRChat.exe” directly on Windows.
+## 5. Usage Workflow
 
-And if this project helped you, please give it a star! 👻
+1. Start the game via `~/proton.sh` in WSL (starts proxy servers).
+2. Launch the Windows game client directly.
+3. The Windows client connects to the WSL server and passes EAC authentication seamlessly.

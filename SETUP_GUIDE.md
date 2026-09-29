@@ -1,35 +1,38 @@
-> [!WARNING]
-> This guide is outdated and unsupported! Please DO NOT follow this guide.
+# Setup Guide — Linux Virtual Machine (VMware)
 
-# 1. Introduction
+This guide walks through configuring a Linux virtual machine using VMware to run the Linux / Proton side of the emulator while running your game client on your Windows host.
 
-You will need a software can host a virtual machine to run linux side of the this project.
-Please use [VMWare](https://www.vmware.com/) for this purpose 
+---
 
-**WE DO NOT SUPPORT FOR ANTI-VM DETECTION BYPASS FOR OTHER THAN VMWARE!**
+## 1. Building the Project
 
-After completing setup any vm, please install any linux distro you want to use on it.
-We are going to use [Linux Mint](https://linuxmint.com/) for this guide.
+Build both the Windows client DLL and the Linux server DLL using Visual Studio 2022:
 
-# 2. Setting up Virtual-Machine
+1. Open [EOSEmulator.sln](file:///e:/Project/eac-emulator/EOSEmulator.sln) in Visual Studio 2022.
+2. Select **Release | x64**.
+3. Build the solution (`Ctrl+Shift+B` or run `msbuild EOSEmulator.sln /p:Configuration=Release /p:Platform=x64`).
+4. Output binaries are generated in `bin\Release\`:
+   - `EOSSDK-Win64-Shipping.dll` (for Windows client)
+   - `version.dll` (for Linux VM server)
 
-Please follow the steps below to setup your VM configuration.
+---
 
-## Change the MAC address of your VM
+## 2. Virtual Machine Setup (VMware)
 
-Open your VM settings and select `Network Adapter` tab and open `Advanced` section.
+VMware Workstation or VMware Player is recommended for hosting the Linux VM.
 
-and change the MAC address to like `00:0C:29:00:00:01`  (Avoid using address starting with `00:50`!)
+### Change the MAC Address
+In your VM settings:
+1. Open the **Network Adapter** tab and click **Advanced**.
+2. Change the MAC address to a custom address such as `00:0C:29:00:00:01` (avoid prefixes starting with `00:50`).
 
-## Avoid Virtaul-Machine detection from EAC
+### Bypass Anti-VM Detection
+To prevent EasyAntiCheat from detecting the hypervisor environment:
+1. Ensure the VM is powered off.
+2. Open the VM's `.vmx` configuration file in a text editor.
+3. Append the following configuration lines to the bottom of the file:
 
-Open your VM file location and open `.vmx` file with a text editor.
-And add the following lines to the end of the file.
-
-> [!NOTE]
-> Make sure you closed your VM before editing `.vmx` file.
-
-```
+```ini
 hypervisor.cpuid.v0 = "FALSE"
 board-id.reflectHost = "TRUE"
 hw.model.reflectHost = "TRUE"
@@ -54,65 +57,72 @@ scsi0:0.productID = "Tencent SSD"
 scsi0:0.vendorID = "Tencent"
 ```
 
-# 3. Prepare Linux side
+Save the file and power on the VM.
 
-## Install VRChat
+---
 
-Install steam app on your linux and open settings and enable `Steam Play` for all titles.
+## 3. Prepare Linux Side
 
-You can find it on `Steam -> Compatibility -> Enable Steam Play for all other titiles` and enable it.
+### Install Steam & Game
+1. Install Steam on your Linux distribution (Linux Mint, Ubuntu, Arch, etc.).
+2. In Steam Settings -> **Compatibility**, check **Enable Steam Play for all other titles** (select **Proton Experimental** or **Proton Hotfix**).
+3. Install the target game (e.g., SpiritVale or VRChat) and run it at least once.
 
-Then, install VRChat on your linux and please launch it at least once.
-
-## Place bootstrapper File
-
-Place the `version.dll` you built to the same directory with the `VRChat.exe` file.
-
-You can find VRChat executable file on `~/.steam/steam/steamapps/common/VRChat`
-
-## Setup proton environment
-
-### Install protontricks
-Open terminal and run the following command 
-```
-flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install com.github.Matoking.protontricks --system
+### Place the Bootstrapper DLL
+Copy `version.dll` into the game directory next to the game executable:
+```bash
+# Path typically: ~/.steam/steam/steamapps/common/<GameFolder>/
+cp /path/to/version.dll ~/.steam/steam/steamapps/common/<GameFolder>/
 ```
 
-### Run protontricks
-```
-flatpak run com.github.Matoking.protontricks 438100 --gui
-```
-then select 'Select the default wineprefix' and click 'OK'
+### Configure Proton Environment via Protontricks
+1. Install Protontricks:
+   ```bash
+   flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+   flatpak install com.github.Matoking.protontricks --system
+   ```
+2. Launch Protontricks GUI for your game:
+   ```bash
+   flatpak run com.github.Matoking.protontricks <SteamAppId> --gui
+   ```
+3. Select **Select the default wineprefix** -> **OK**.
+4. Configure DLL Overrides:
+   - Select **Run winecfg**.
+   - Navigate to the **Libraries** tab.
+   - Under *New override for library*, type `version` and click **Add**.
+   - Ensure `version` is set to `(native, builtin)` and click **OK**.
+5. Install Visual C++ Redistributable:
+   - Download the [Visual C++ Redistributable All-in-One](https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/).
+   - In Protontricks, select **Run Uninstaller** -> click **Install** -> choose the `.bat` installer script from the extracted package.
 
-> [!NOTE]  
-> Use [Piping-UI](https://piping-ui.org/?lang=en) if your clipboard synchronization is not working properly!
+---
 
-Then please follow the steps below.
+## 4. Prepare Windows Side
 
-1. Select 'Run winecfg'
-2. Go to 'Libraries' tab and add `version` and set it to `native, builtin` and click 'OK'
-3. Download [Runtimes All-in-One](https://www.techpowerup.com/download/visual-c-redistributable-runtime-package-all-in-one/) and extract it
-4. Select 'Run Uninstaller' (If there is not protontricks window, please run it again)
-5. Click 'Install' and find .bat file from the folder you extracted and click 'OK'
-6. Once it's done, close the protontricks window.
+1. Copy `EOSSDK-Win64-Shipping.dll` to the game's plugin directory on Windows:
+   ```text
+   <GameDirectory>\<GameName>_Data\Plugins\x86_64\EOSSDK-Win64-Shipping.dll
+   ```
+   *(e.g., `SpiritVale_Data\Plugins\x86_64\EOSSDK-Win64-Shipping.dll`)*
 
-# 4. Prepare Windows side
+2. Launch `<GameExecutable>.exe` directly on Windows once to generate `config.json`.
 
-Just copy the `EOSSDK-Win64-Shipping.dll` you built to "VRChat\VRChat_Data\Plugins\x86_64" directory.
+3. Edit `config.json` with the local IP address of your Linux VM:
+   ```json
+   {
+       "ip": "192.168.146.129",
+       "ports": {
+           "http": 7778,
+           "tcp": 7777
+       }
+   }
+   ```
+   *(Replace `192.168.146.129` with your Linux VM's actual IP address found using `ip addr` in Linux).*
 
-Then launch VRChat.exe directly from explorer and you will get generated configuration file named "config.json".
-Please edit the host property to your local address of linux
-```
-{
-    "ip": "192.168.146.129", <-- Here
-    "ports": {
-        "http": 7778,
-        "tcp": 7777
-    }
-}
-```
+---
 
-And you are ready to go! 🎉
+## 5. Launch Workflow
 
-Launch “VRChat.exe” directly on Windows or from Steam on Linux
+1. Start the game on the Linux VM (this starts the emulator HTTP and WebSocket servers).
+2. Launch the Windows game executable directly.
+3. The Windows client connects to the Linux VM proxy for anticheat verification and session management.
