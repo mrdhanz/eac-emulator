@@ -7,6 +7,9 @@
 
 #define EOS_EResult int
 #define EOS_ENetworkStatus int
+#define EOS_Bool int32_t
+#define EOS_TRUE 1
+#define EOS_FALSE 0
 
 typedef uintptr_t EOS_HPlatform;
 typedef uintptr_t EOS_HConnect;

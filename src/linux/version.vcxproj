@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{9E5508B7-DF58-4653-9092-2A44DD708BA0}</ProjectGuid>
+    <RootNamespace>version</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>version</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>version</TargetName>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>version</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;HV_STATICLIB;version_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)dependencies\plog\include;$(SolutionDir)includes;$(SolutionDir)src;$(SolutionDir)dependencies\minhook\include;$(SolutionDir)dependencies\libhv\include;$(SolutionDir)dependencies\crashlog\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>$(SolutionDir)lib\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hv_static.lib;minhook.lib;crashlog.lib;secur32.lib;crypt32.lib;winmm.lib;iphlpapi.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ImportLibrary>$(SolutionDir)lib\$(Configuration)\$(TargetName).lib</ImportLibrary>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;WIN32;_WINDOWS;HV_STATICLIB;version_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SolutionDir)dependencies\plog\include;$(SolutionDir)includes;$(SolutionDir)src;$(SolutionDir)dependencies\minhook\include;$(SolutionDir)dependencies\libhv\include;$(SolutionDir)dependencies\crashlog\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <Optimization>MaxSpeed</Optimization>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>$(SolutionDir)lib\$(Configuration)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>hv_static.lib;minhook.lib;crashlog.lib;secur32.lib;crypt32.lib;winmm.lib;iphlpapi.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ImportLibrary>$(SolutionDir)lib\$(Configuration)\$(TargetName).lib</ImportLibrary>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="bootstrapper.h" />
+    <ClInclude Include="forwarding\forwarder.h" />
+    <ClInclude Include="servers\websocket_server.h" />
+    <ClInclude Include="servers\http_server.h" />
+    <ClInclude Include="eos\eos_logger.h" />
+    <ClInclude Include="eos\eos_platform.h" />
+    <ClInclude Include="eos\eos_utils.h" />
+    <ClInclude Include="eos\eos.h" />
+    <ClInclude Include="eos\eos_connect.h" />
+    <ClInclude Include="eos\eos_anticheat.h" />
+    <ClInclude Include="handlers\handler_registry.h" />
+    <ClInclude Include="handlers\platform\create_platform_handler.h" />
+    <ClInclude Include="handlers\common\initialize_eos_handler.h" />
+    <ClInclude Include="handlers\common\handshake_packet_handler.h" />
+    <ClInclude Include="handlers\anticheat\begin_session_handler.h" />
+    <ClInclude Include="handlers\notification\notify_message_to_server_handler.h" />
+    <ClInclude Include="handlers\anticheat\receive_message_handler.h" />
+    <ClInclude Include="handlers\anticheat\end_session_handler.h" />
+    <ClInclude Include="api\api_handler_registry.h" />
+    <ClInclude Include="api\id2string_handler.h" />
+    <ClInclude Include="api\login_handler.h" />
+    <ClInclude Include="api\login_status_handler.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="bootstrapper.cpp" />
+    <ClCompile Include="forwarding\exports.cpp" />
+    <ClCompile Include="forwarding\forwarder.cpp" />
+    <ClCompile Include="servers\websocket_server.cpp" />
+    <ClCompile Include="servers\http_server.cpp" />
+    <ClCompile Include="eos\eos_platform.cpp" />
+    <ClCompile Include="eos\eos.cpp" />
+    <ClCompile Include="eos\eos_connect.cpp" />
+    <ClCompile Include="eos\eos_anticheat.cpp" />
+    <ClCompile Include="handlers\platform\create_platform_handler.cpp" />
+    <ClCompile Include="handlers\common\initialize_eos_handler.cpp" />
+    <ClCompile Include="handlers\common\handshake_packet_handler.cpp" />
+    <ClCompile Include="handlers\anticheat\begin_session_handler.cpp" />
+    <ClCompile Include="handlers\notification\notify_message_to_server_handler.cpp" />
+    <ClCompile Include="handlers\anticheat\receive_message_handler.cpp" />
+    <ClCompile Include="handlers\anticheat\end_session_handler.cpp" />
+    <ClCompile Include="api\id2string_handler.cpp" />
+    <ClCompile Include="api\login_handler.cpp" />
+    <ClCompile Include="api\login_status_handler.cpp" />
+    <ClCompile Include="..\common\utils.cpp" />
+    <ClCompile Include="..\common\api\requests\id2string_request.cpp" />
+    <ClCompile Include="..\common\api\requests\login_request.cpp" />
+    <ClCompile Include="..\common\api\requests\login_status_request.cpp" />
+    <ClCompile Include="..\common\api\response\id2string_response.cpp" />
+    <ClCompile Include="..\common\api\response\login_response.cpp" />
+    <ClCompile Include="..\common\api\response\login_status_response.cpp" />
+    <ClCompile Include="..\common\protocol\packet_codec.cpp" />
+    <ClCompile Include="..\common\protocol\packet_factory.cpp" />
+    <ClCompile Include="..\common\protocol\packets\begin_session_packet.cpp" />
+    <ClCompile Include="..\common\protocol\packets\create_platform_packet.cpp" />
+    <ClCompile Include="..\common\protocol\packets\end_session_packet.cpp" />
+    <ClCompile Include="..\common\protocol\packets\handshake_packet.cpp" />
+    <ClCompile Include="..\common\protocol\packets\initialize_eos_packet.cpp" />
+    <ClCompile Include="..\common\protocol\packets\notify_message_to_server_packet.cpp" />
+    <ClCompile Include="..\common\protocol\packets\receive_message_packet.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exports.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\dependencies\libhv\libhv.vcxproj">
+      <Project>{FF5304D6-6690-436B-9B3F-C35210A138B2}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\dependencies\minhook\minhook.vcxproj">
+      <Project>{EED56E5C-D788-43FE-B82C-1A8560E6A424}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\dependencies\crashlog\crashlog.vcxproj">
+      <Project>{A9864A2C-A1B8-4BA4-A646-0E143A032E85}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

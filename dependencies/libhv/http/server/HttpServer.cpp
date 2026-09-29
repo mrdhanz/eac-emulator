@@ -1,0 +1,450 @@
+#include "HttpServer.h"
+
+#include "hmain.h" // import master_workers_run
+#include "herr.h"
+#include "hlog.h"
+#include "htime.h"
+#include "hsocket.h"
+
+#include "EventLoop.h"
+using namespace hv;
+
+#include "HttpHandler.h"
+
+static void on_accept(hio_t* io);
+static void on_recv(hio_t* io, void* _buf, int readbytes);
+static void on_send(hio_t* io, const void* _buf, int writebytes);
+static void on_close(hio_t* io);
+
+struct HttpServerPrivdata {
+    std::vector<EventLoopPtr>       loops;
+    std::vector<hthread_t>          threads;
+    std::mutex                      mutex_;
+    std::shared_ptr<HttpService>    service;
+    FileCache                       filecache;
+};
+
+static void on_recv(hio_t* io, void* buf, int readbytes) {
+    // printf("on_recv fd=%d readbytes=%d\n", hio_fd(io), readbytes);
+    HttpHandler* handler = (HttpHandler*)hevent_userdata(io);
+    assert(handler != NULL);
+
+    if (handler->server) {
+        handler->server->stat.total_recv_bytes += readbytes;
+    }
+
+    int nfeed = handler->FeedRecvData((const char*)buf, readbytes);
+    if (nfeed != readbytes) {
+        hio_close(io);
+        return;
+    }
+}
+
+// NOTE: HttpServer owns the io write_cb so it can count sent bytes; the
+// HttpResponseWriter (a Channel) is located via hio_context and its onwrite
+// is still dispatched here, so streaming (sendfile/SSE) keeps working.
+static void on_send(hio_t* io, const void* buf, int writebytes) {
+    HttpHandler* handler = (HttpHandler*)hevent_userdata(io);
+    if (handler && handler->server) {
+        handler->server->stat.total_send_bytes += writebytes;
+    }
+    hv::Channel* channel = (hv::Channel*)hio_context(io);
+    if (channel && channel->onwrite) {
+        hv::Buffer data((void*)buf, writebytes);
+        channel->onwrite(&data);
+    }
+}
+
+static void on_close(hio_t* io) {
+    HttpHandler* handler = (HttpHandler*)hevent_userdata(io);
+    if (handler == NULL) return;
+    http_server_t* server = handler->server;
+
+    if (server && server->onClose) {
+        server->onClose(io);
+    }
+
+    hevent_set_userdata(io, NULL);
+    delete handler;
+
+    EventLoop* loop = currentThreadEventLoop;
+    if (loop) {
+        --loop->connectionNum;
+    }
+    if (server) {
+        --server->stat.cur_connections;
+    }
+}
+
+static void on_accept(hio_t* io) {
+    http_server_t* server = (http_server_t*)hevent_userdata(io);
+    HttpService* service = server->service;
+    /*
+    printf("on_accept connfd=%d\n", hio_fd(io));
+    char localaddrstr[SOCKADDR_STRLEN] = {0};
+    char peeraddrstr[SOCKADDR_STRLEN] = {0};
+    printf("accept connfd=%d [%s] <= [%s]\n", hio_fd(io),
+            SOCKADDR_STR(hio_localaddr(io), localaddrstr),
+            SOCKADDR_STR(hio_peeraddr(io), peeraddrstr));
+    */
+
+    EventLoop* loop = currentThreadEventLoop;
+    if (server->draining) {
+        // graceful shutdown in progress: reject new connections
+        hio_close(io);
+        return;
+    }
+    if (loop->connectionNum >= server->worker_connections) {
+        hlogw("over worker_connections");
+        hio_close(io);
+        return;
+    }
+    if (server->onAccept) {
+        if (!server->onAccept(io)) {
+            hio_close(io);
+            return;
+        }
+    }
+    ++loop->connectionNum;
+    ++server->stat.total_connections;
+    ++server->stat.cur_connections;
+
+    hio_setcb_close(io, on_close);
+    hio_setcb_read(io, on_recv);
+    // NOTE: set write_cb before new HttpHandler (which creates the writer
+    // Channel that would otherwise install its own write_cb); on_send then
+    // owns the slot and still dispatches the writer's onwrite.
+    hio_setcb_write(io, on_send);
+    hio_read(io);
+    if (service->keepalive_timeout > 0) {
+        hio_set_keepalive_timeout(io, service->keepalive_timeout);
+    }
+
+    // new HttpHandler, delete on_close
+    HttpHandler* handler = new HttpHandler(io);
+    // ssl
+    handler->ssl = hio_is_ssl(io);
+    // ip:port
+    sockaddr_u* peeraddr = (sockaddr_u*)hio_peeraddr(io);
+    sockaddr_ip(peeraddr, handler->ip, sizeof(handler->ip));
+    handler->port = sockaddr_port(peeraddr);
+    // http server
+    handler->server = server;
+    // http service
+    handler->service = service;
+    // websocket service
+    handler->ws_service = server->ws;
+    // FileCache
+    HttpServerPrivdata* privdata = (HttpServerPrivdata*)server->privdata;
+    handler->files = &privdata->filecache;
+    hevent_set_userdata(io, handler);
+}
+
+static void loop_thread(void* userdata) {
+    http_server_t* server = (http_server_t*)userdata;
+    HttpService* service = server->service;
+
+    auto loop = std::make_shared<EventLoop>();
+    hloop_t* hloop = loop->loop();
+    // http
+    if (server->listenfd[0] >= 0) {
+        hio_t* listenio = haccept(hloop, server->listenfd[0], on_accept);
+        hevent_set_userdata(listenio, server);
+    }
+    // https
+    if (server->listenfd[1] >= 0) {
+        hio_t* listenio = haccept(hloop, server->listenfd[1], on_accept);
+        hevent_set_userdata(listenio, server);
+        hio_enable_ssl(listenio);
+        if (server->ssl_ctx) {
+            hio_set_ssl_ctx(listenio, server->ssl_ctx);
+        }
+    }
+
+    HttpServerPrivdata* privdata = (HttpServerPrivdata*)server->privdata;
+    privdata->mutex_.lock();
+    if (privdata->loops.size() == 0) {
+        // NOTE: fsync logfile when idle
+        hlog_disable_fsync();
+        hidle_add(hloop, [](hidle_t*) {
+            hlog_fsync();
+        }, INFINITE);
+
+        // NOTE: add timer to update s_date every 1s
+        htimer_add(hloop, [](htimer_t* timer) {
+            gmtime_fmt(hloop_now(hevent_loop(timer)), HttpMessage::s_date);
+        }, 1000);
+
+        // document_root
+        if (service->document_root.size() > 0 && service->GetStaticFilepath("/").empty()) {
+            service->Static("/", service->document_root.c_str());
+        }
+
+        // FileCache
+        FileCache* filecache = &privdata->filecache;
+        filecache->stat_interval = service->file_cache_stat_interval;
+        filecache->expired_time = service->file_cache_expired_time;
+        if (filecache->expired_time > 0) {
+            // NOTE: add timer to remove expired file cache
+            htimer_t* timer = htimer_add(hloop, [](htimer_t* timer) {
+                FileCache* filecache = (FileCache*)hevent_userdata(timer);
+                filecache->RemoveExpiredFileCache();
+            },  filecache->expired_time * 1000);
+            hevent_set_userdata(timer, filecache);
+        }
+    }
+    privdata->loops.push_back(loop);
+    privdata->mutex_.unlock();
+
+    hlogi("EventLoop started, pid=%ld tid=%ld", hv_getpid(), hv_gettid());
+    if (server->onWorkerStart) {
+        loop->queueInLoop([server](){
+            server->onWorkerStart();
+        });
+    }
+
+    loop->run();
+
+    if (server->onWorkerStop) {
+        server->onWorkerStop();
+    }
+    hlogi("EventLoop stopped, pid=%ld tid=%ld", hv_getpid(), hv_gettid());
+}
+
+#ifdef OS_WIN
+static void WINAPI loop_thread_stdcall(void* userdata) {
+    return loop_thread(userdata);
+}
+#endif
+
+/* @workflow:
+ * http_server_run -> Listen -> master_workers_run / hthread_create ->
+ * loop_thread -> accept -> EventLoop::run ->
+ * on_accept -> new HttpHandler -> hio_read ->
+ * on_recv -> HttpHandler::FeedRecvData ->
+ * on_close -> delete HttpHandler
+ */
+int http_server_run(http_server_t* server, int wait) {
+    // reset graceful-shutdown state in case the server object is reused
+    server->draining = false;
+    // http_port
+    if (server->port >= 0) {
+        server->listenfd[0] = Listen(server->port, server->host);
+        if (server->listenfd[0] < 0) return server->listenfd[0];
+        if (server->port == 0) {
+            // port=0: OS auto-assigned a free port, retrieve the actual port
+            sockaddr_u localaddr;
+            socklen_t addrlen = sizeof(localaddr);
+            if (getsockname(server->listenfd[0], &localaddr.sa, &addrlen) == 0) {
+                server->port = sockaddr_port(&localaddr);
+            } else {
+                hloge("getsockname failed: %s", strerror(errno));
+            }
+        }
+        hlogi("http server listening on %s:%d", server->host, server->port);
+    }
+    // https_port
+    if (server->https_port >= 0 && HV_WITH_SSL) {
+        server->listenfd[1] = Listen(server->https_port, server->host);
+        if (server->listenfd[1] < 0) return server->listenfd[1];
+        if (server->https_port == 0) {
+            // https_port=0: OS auto-assigned a free port, retrieve the actual port
+            sockaddr_u localaddr;
+            socklen_t addrlen = sizeof(localaddr);
+            if (getsockname(server->listenfd[1], &localaddr.sa, &addrlen) == 0) {
+                server->https_port = sockaddr_port(&localaddr);
+            } else {
+                hloge("getsockname failed: %s", strerror(errno));
+            }
+        }
+        hlogi("https server listening on %s:%d", server->host, server->https_port);
+    }
+    // SSL_CTX
+    if (server->listenfd[1] >= 0) {
+        if (server->ssl_ctx == NULL) {
+            server->ssl_ctx = hssl_ctx_instance();
+        }
+        if (server->ssl_ctx == NULL) {
+            hloge("new SSL_CTX failed!");
+            return ERR_NEW_SSL_CTX;
+        }
+#ifdef WITH_NGHTTP2
+#ifdef WITH_OPENSSL
+        static unsigned char s_alpn_protos[] = "\x02h2\x08http/1.1\x08http/1.0\x08http/0.9";
+        hssl_ctx_set_alpn_protos(server->ssl_ctx, s_alpn_protos, sizeof(s_alpn_protos) - 1);
+#endif
+#endif
+    }
+
+    HttpServerPrivdata* privdata = new HttpServerPrivdata;
+    server->privdata = privdata;
+    if (server->service == NULL) {
+        privdata->service = std::make_shared<HttpService>();
+        server->service = privdata->service.get();
+    }
+
+    if (server->worker_processes) {
+        // multi-processes
+        return master_workers_run(loop_thread, server, server->worker_processes, server->worker_threads, wait);
+    }
+    else {
+        // multi-threads
+        if (server->worker_threads == 0) server->worker_threads = 1;
+        for (int i = wait ? 1 : 0; i < server->worker_threads; ++i) {
+#ifdef OS_WIN
+            hthread_t thrd = hthread_create((hthread_routine)loop_thread_stdcall, server);
+#else
+            hthread_t thrd = hthread_create((hthread_routine)loop_thread, server);
+#endif
+            privdata->threads.push_back(thrd);
+        }
+        if (wait) {
+            loop_thread(server);
+        }
+        return 0;
+    }
+}
+
+/* @workflow:
+ * http_server_stop -> EventLoop::stop -> hthread_join
+ */
+int http_server_stop(http_server_t* server) {
+    HttpServerPrivdata* privdata = (HttpServerPrivdata*)server->privdata;
+    if (privdata == NULL) return 0;
+
+#ifdef OS_UNIX
+    if (server->worker_processes) {
+        signal_handle("stop");
+        return 0;
+    }
+#endif
+
+    // wait for all threads started and all loops running
+    while (1) {
+        hv_delay(1);
+        std::lock_guard<std::mutex> locker(privdata->mutex_);
+        // wait for all loops created
+        if (privdata->loops.size() < server->worker_threads) {
+            continue;
+        }
+        // wait for all loops running
+        bool all_loops_running = true;
+        for (auto& loop : privdata->loops) {
+            if (loop->status() < hv::Status::kRunning) {
+                all_loops_running = false;
+                break;
+            }
+        }
+        if (all_loops_running) break;
+    }
+
+    // stop all loops
+    for (auto& loop : privdata->loops) {
+        loop->stop();
+    }
+
+    // join all threads
+    for (auto& thrd : privdata->threads) {
+        hthread_join(thrd);
+    }
+
+    if (server->alloced_ssl_ctx && server->ssl_ctx) {
+        hssl_ctx_free(server->ssl_ctx);
+        server->alloced_ssl_ctx = 0;
+        server->ssl_ctx = NULL;
+    }
+
+    delete privdata;
+    server->privdata = NULL;
+    return 0;
+}
+
+int http_server_stop_accept(http_server_t* server) {
+#ifdef OS_UNIX
+    if (server->worker_processes) {
+        // multi-process graceful shutdown is not supported (master manages
+        // workers via signals). Use single-process (multi-threaded) mode.
+        hloge("http_server_stop_accept is not supported in multi-process mode");
+        return ERR_INVALID_PARAM;
+    }
+#endif
+    HttpServerPrivdata* privdata = (HttpServerPrivdata*)server->privdata;
+    if (privdata == NULL) return 0;
+
+    // Set draining first: rejects new connections in on_accept (backlog that
+    // slips in before hio_del) and forces keep-alive connections to close after
+    // their current response. In-flight requests are allowed to finish.
+    server->draining = true;
+
+    // Stop accepting on each loop's listen io by removing its read event.
+    // NOTE: only del the event, do NOT close the shared listenfd here; the fd
+    // is closed once by hloop cleanup on stop(). hio_del must run in the io's
+    // loop thread, so post it via runInLoop.
+    std::lock_guard<std::mutex> locker(privdata->mutex_);
+    for (auto& loop : privdata->loops) {
+        hloop_t* hloop = loop->loop();
+        if (hloop == NULL) continue;
+        loop->runInLoop([hloop, server]() {
+            for (int i = 0; i < 2; ++i) {
+                if (server->listenfd[i] < 0) continue;
+                hio_t* listenio = hio_get(hloop, server->listenfd[i]);
+                if (listenio) hio_del(listenio, HV_READ);
+            }
+        });
+    }
+    return 0;
+}
+
+int http_server_graceful_stop(http_server_t* server, int timeout_ms) {
+#ifdef OS_UNIX
+    if (server->worker_processes) {
+        hloge("http_server_graceful_stop is not supported in multi-process mode");
+        return ERR_INVALID_PARAM;
+    }
+#endif
+    http_server_stop_accept(server);
+
+    // wait for in-flight connections to drain (or until timeout)
+    if (timeout_ms != 0) {
+        // use monotonic clock; check deadline before sleeping and cap the
+        // sleep to the remaining time so a small timeout does not overshoot.
+        unsigned int start = gettick_ms();
+        while (server->stat.cur_connections.load() > 0) {
+            if (timeout_ms > 0) {
+                int elapsed = (int)(gettick_ms() - start);
+                int remain = timeout_ms - elapsed;
+                if (remain <= 0) break;
+                hv_delay(MIN(remain, 50));
+            } else {
+                hv_delay(50);
+            }
+        }
+    }
+
+    return http_server_stop(server);
+}
+
+namespace hv {
+
+std::shared_ptr<hv::EventLoop> HttpServer::loop(int idx) {
+    HttpServerPrivdata* privdata = (HttpServerPrivdata*)this->privdata;
+    if (privdata == NULL) return NULL;
+    std::lock_guard<std::mutex> locker(privdata->mutex_);
+    if (privdata->loops.empty()) return NULL;
+    if (idx < 0) {
+        EventLoop* cur = currentThreadEventLoop;
+        for (auto& loop : privdata->loops) {
+            if (loop.get() == cur) return loop;
+        }
+    }
+    else if (idx >= 0 && idx < (int)privdata->loops.size()) {
+        return privdata->loops[idx];
+    }
+    return NULL;
+}
+
+size_t HttpServer::connectionNum() {
+    return stat.cur_connections.load();
+}
+
+}

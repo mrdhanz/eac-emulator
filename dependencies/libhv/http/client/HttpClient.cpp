@@ -1,0 +1,994 @@
+#include "HttpClient.h"
+
+#include <mutex>
+
+#ifdef WITH_CURL
+#include "curl/curl.h"
+#endif
+
+#include "herr.h"
+#include "hlog.h"
+#include "htime.h"
+#include "hstring.h"
+#include "hurl.h"
+#include "hsocket.h"
+#include "hssl.h"
+#include "base64.h"
+#include "HttpParser.h"
+
+// for async
+#include "AsyncHttpClient.h"
+
+using namespace hv;
+
+struct http_client_s {
+    std::string  host;
+    int          port;
+    unsigned char https;         // 0/1
+    unsigned char http_version;  // intended HTTP version for the next connect (1 or 2)
+    int          timeout; // s
+    http_headers headers;
+    // http_proxy
+    std::string  http_proxy_host;
+    int          http_proxy_port;
+    // https_proxy
+    std::string  https_proxy_host;
+    int          https_proxy_port;
+    // proxy auth (Basic for http, SOCKS5/CONNECT tunnel auth)
+    std::string  proxy_username;
+    std::string  proxy_password;
+    // no_proxy
+    StringList   no_proxy_hosts;
+//private:
+#ifdef WITH_CURL
+    CURL* curl;
+#endif
+    // for sync
+    int             fd;
+    unsigned int    keepalive_requests;
+    hssl_t          ssl;
+    hssl_ctx_t      ssl_ctx;
+    bool            alloced_ssl_ctx;
+    HttpParserPtr   parser;
+    HttpConnKey     conn_key;
+    // for async
+    std::mutex                              mutex_;
+    std::shared_ptr<hv::AsyncHttpClient>    async_client_;
+
+    http_client_s() {
+        host = LOCALHOST;
+        port = DEFAULT_HTTP_PORT;
+        https = 0;
+        timeout = DEFAULT_HTTP_TIMEOUT;
+        http_proxy_port = DEFAULT_HTTP_PORT;
+        https_proxy_port = DEFAULT_HTTP_PORT;
+#ifdef WITH_CURL
+        curl = NULL;
+#endif
+        fd = -1;
+        keepalive_requests = 0;
+        ssl = NULL;
+        ssl_ctx = NULL;
+        alloced_ssl_ctx = false;
+        http_version = 1;
+    }
+
+    ~http_client_s() {
+        Close();
+        if (ssl_ctx && alloced_ssl_ctx) {
+            hssl_ctx_free(ssl_ctx);
+            ssl_ctx = NULL;
+        }
+    }
+
+    void Close() {
+#ifdef WITH_CURL
+        if (curl) {
+            curl_easy_cleanup(curl);
+            curl = NULL;
+        }
+#endif
+        if (ssl) {
+            hssl_free(ssl);
+            ssl = NULL;
+        }
+        SAFE_CLOSESOCKET(fd);
+    }
+};
+
+http_client_t* http_client_new(const char* host, int port, int https) {
+    http_client_t* cli = new http_client_t;
+    if (host) cli->host = host;
+    cli->port = port;
+    cli->https = https ? 1 : 0;
+    cli->headers["Connection"] = "keep-alive";
+    return cli;
+}
+
+int http_client_del(http_client_t* cli) {
+    if (cli == NULL) return 0;
+    delete cli;
+    return 0;
+}
+
+int http_client_set_timeout(http_client_t* cli, int timeout) {
+    cli->timeout = timeout;
+    return 0;
+}
+
+int http_client_set_ssl_ctx(http_client_t* cli, hssl_ctx_t ssl_ctx) {
+    cli->ssl_ctx = ssl_ctx;
+    return 0;
+}
+
+int http_client_new_ssl_ctx(http_client_t* cli, hssl_ctx_opt_t* opt) {
+    opt->endpoint = HSSL_CLIENT;
+    hssl_ctx_t ssl_ctx = hssl_ctx_new(opt);
+    if (ssl_ctx == NULL) return ERR_NEW_SSL_CTX;
+    cli->alloced_ssl_ctx = true;
+    return http_client_set_ssl_ctx(cli, ssl_ctx);
+}
+
+int http_client_clear_headers(http_client_t* cli) {
+    cli->headers.clear();
+    return 0;
+}
+
+int http_client_set_header(http_client_t* cli, const char* key, const char* value) {
+    cli->headers[key] = value;
+    return 0;
+}
+
+int http_client_del_header(http_client_t* cli, const char* key) {
+    auto iter = cli->headers.find(key);
+    if (iter != cli->headers.end()) {
+        cli->headers.erase(iter);
+    }
+    return 0;
+}
+
+const char* http_client_get_header(http_client_t* cli, const char* key) {
+    auto iter = cli->headers.find(key);
+    if (iter != cli->headers.end()) {
+        return iter->second.c_str();
+    }
+    return NULL;
+}
+
+int http_client_set_http_proxy(http_client_t* cli, const char* host, int port) {
+    cli->http_proxy_host = host;
+    cli->http_proxy_port = port;
+    return 0;
+}
+
+int http_client_set_https_proxy(http_client_t* cli, const char* host, int port) {
+    cli->https_proxy_host = host;
+    cli->https_proxy_port = port;
+    return 0;
+}
+
+int http_client_add_no_proxy(http_client_t* cli, const char* host) {
+    cli->no_proxy_hosts.push_back(host);
+    return 0;
+}
+
+int http_client_set_proxy_auth(http_client_t* cli, const char* username, const char* password) {
+    cli->proxy_username = username ? username : "";
+    cli->proxy_password = password ? password : "";
+    return 0;
+}
+
+static int http_client_make_request(http_client_t* cli, HttpRequest* req) {
+    if (req->url.empty() || *req->url.c_str() == '/') {
+        req->scheme = cli->https ? "https" : "http";
+        req->host = cli->host;
+        req->port = cli->port;
+    }
+    req->ParseUrl();
+
+    if (!req->IsProxy()) {
+        bool https = req->IsHttps();
+        bool use_proxy = https ? (!cli->https_proxy_host.empty()) : (!cli->http_proxy_host.empty());
+        if (use_proxy) {
+            if (req->host == "127.0.0.1" || req->host == "localhost") {
+                use_proxy = false;
+            }
+        }
+        if (use_proxy) {
+            for (const auto& host : cli->no_proxy_hosts) {
+                if (req->host == host) {
+                    use_proxy = false;
+                    break;
+                }
+            }
+        }
+
+        if (use_proxy) {
+            const std::string& proxy_host = https ? cli->https_proxy_host : cli->http_proxy_host;
+            int proxy_port = https ? cli->https_proxy_port : cli->http_proxy_port;
+            req->SetProxy(proxy_host.c_str(), proxy_port);
+            if (!cli->proxy_username.empty()) {
+                req->SetProxyAuth(cli->proxy_username.c_str(), cli->proxy_password.c_str());
+            }
+        }
+    }
+
+    if (req->timeout == 0) {
+        req->timeout = cli->timeout;
+    }
+
+    for (const auto& pair : cli->headers) {
+        if (req->headers.find(pair.first) == req->headers.end()) {
+            req->headers.insert(pair);
+        }
+    }
+
+    return 0;
+}
+
+static void http_client_copy_settings(http_client_t* dst, const http_client_t* src) {
+    dst->host = src->host;
+    dst->port = src->port;
+    dst->https = src->https;
+    dst->timeout = src->timeout;
+    dst->headers = src->headers;
+    dst->http_proxy_host = src->http_proxy_host;
+    dst->http_proxy_port = src->http_proxy_port;
+    dst->https_proxy_host = src->https_proxy_host;
+    dst->https_proxy_port = src->https_proxy_port;
+    dst->proxy_username = src->proxy_username;
+    dst->proxy_password = src->proxy_password;
+    dst->no_proxy_hosts = src->no_proxy_hosts;
+    dst->ssl_ctx = src->ssl_ctx;
+    dst->alloced_ssl_ctx = false;
+}
+
+// Client-side TLS handshake on an already-connected fd. sni_host is the origin
+// host used for SNI. On failure frees cli->ssl and returns an error (<0); the
+// caller owns/closes connfd.
+static int http_client_ssl_handshake(http_client_t* cli, int connfd, const char* sni_host,
+                                     int blocktime, unsigned int start_time) {
+    // cli->ssl_ctx > g_ssl_ctx > hssl_ctx_new
+    hssl_ctx_t ssl_ctx = NULL;
+    if (cli->ssl_ctx) {
+        ssl_ctx = cli->ssl_ctx;
+    } else if (g_ssl_ctx) {
+        ssl_ctx = g_ssl_ctx;
+    } else {
+        cli->ssl_ctx = ssl_ctx = hssl_ctx_new(NULL);
+        cli->alloced_ssl_ctx = true;
+    }
+    if (ssl_ctx == NULL) {
+        return NABS(ERR_NEW_SSL_CTX);
+    }
+    cli->ssl = hssl_new(ssl_ctx, connfd);
+    if (cli->ssl == NULL) {
+        return NABS(ERR_NEW_SSL);
+    }
+    if (sni_host && !is_ipaddr(sni_host)) {
+        hssl_set_sni_hostname(cli->ssl, sni_host);
+    }
+#ifdef WITH_OPENSSL
+    // Offer ALPN "h2" only when HTTP/2 is intended, so an h2-capable server
+    // negotiates it (real https servers require ALPN, not prior-knowledge).
+    // Set it per-connection on the SSL object (not the shared ctx), so it
+    // works with any ctx source (user/global/allocated) and never leaks h2
+    // into other clients or http/1.1 requests.
+    if (cli->http_version == 2) {
+        static unsigned char s_alpn_protos[] = "\x02h2\x08http/1.1";
+        hssl_set_alpn_protos(cli->ssl, s_alpn_protos, sizeof(s_alpn_protos) - 1);
+    }
+#endif
+    unsigned int elapsed = gettick_ms() - start_time;
+    int ssl_timeout = blocktime - (int)elapsed;
+    if (ssl_timeout <= 0) {
+        hssl_free(cli->ssl);
+        cli->ssl = NULL;
+        return NABS(ETIMEDOUT);
+    }
+    so_rcvtimeo(connfd, ssl_timeout);
+    int ret = hssl_connect(cli->ssl);
+    if (ret != 0) {
+        fprintf(stderr, "* ssl handshake failed: %d\n", ret);
+        hloge("ssl handshake failed: %d", ret);
+        hssl_free(cli->ssl);
+        cli->ssl = NULL;
+        return NABS(ret);
+    }
+    return 0;
+}
+
+// Blocking HTTP CONNECT handshake to a proxy on connfd: sends
+//   CONNECT origin_host:origin_port HTTP/1.1 ... [Proxy-Authorization] \r\n\r\n
+// then reads the response headers and requires a 2xx status. Returns 0 on
+// success; the caller owns/closes connfd.
+static int http_client_http_connect(int connfd, const char* origin_host, int origin_port,
+                                     const std::string& user, const std::string& pass,
+                                     int blocktime) {
+    // authority form; bracket IPv6 literals per RFC 3986
+    std::string authority = is_ipv6(origin_host)
+        ? hv::asprintf("[%s]:%d", origin_host, origin_port)
+        : hv::asprintf("%s:%d", origin_host, origin_port);
+    std::string reqstr = hv::asprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n",
+                                      authority.c_str(), authority.c_str());
+    if (!user.empty()) {
+        std::string cred = user + ":" + pass;
+        reqstr += "Proxy-Authorization: Basic " +
+                  hv::Base64Encode((const unsigned char*)cred.data(), cred.size()) + "\r\n";
+    }
+    reqstr += "\r\n";
+
+    unsigned int start = gettick_ms();
+    size_t total = 0;
+    while (total < reqstr.size()) {
+        int left = blocktime - (int)(gettick_ms() - start);
+        if (left <= 0) return NABS(ETIMEDOUT);
+        so_sndtimeo(connfd, left);
+        int nsend = send(connfd, reqstr.data() + total, reqstr.size() - total, 0);
+        if (nsend <= 0) {
+            if (socket_errno() == EINTR) continue;
+            return NABS(socket_errno());
+        }
+        total += nsend;
+    }
+
+    // read response headers until CRLFCRLF
+    char buf[1024];
+    int rlen = 0;
+    while (rlen < (int)sizeof(buf)) {
+        int left = blocktime - (int)(gettick_ms() - start);
+        if (left <= 0) return NABS(ETIMEDOUT);
+        so_rcvtimeo(connfd, left);
+        int nrecv = recv(connfd, buf + rlen, sizeof(buf) - rlen, 0);
+        if (nrecv == 0) return NABS(ERR_CONNECT);   // peer closed
+        if (nrecv < 0) {
+            if (socket_errno() == EINTR) continue;
+            return NABS(socket_errno());
+        }
+        rlen += nrecv;
+        for (int i = 3; i < rlen; ++i) {
+            if (buf[i-3]=='\r' && buf[i-2]=='\n' && buf[i-1]=='\r' && buf[i]=='\n') {
+                int code = 0;
+                const char* sp = (const char*)memchr(buf, ' ', rlen);
+                if (sp) code = atoi(sp + 1);
+                if (code >= 200 && code < 300) return 0;
+                hloge("http proxy CONNECT failed: %d", code);
+                return NABS(ERR_CONNECT);
+            }
+        }
+    }
+    return NABS(ERR_CONNECT);   // headers too large, no blank line
+}
+
+int http_client_connect(http_client_t* cli, HttpRequest* req) {
+    if (cli == NULL || req == NULL) return ERR_NULL_POINTER;
+
+    if (!req->url.empty()) {
+        req->ParseUrl();
+    }
+    cli->Close();
+    int blocktime = DEFAULT_CONNECT_TIMEOUT;
+    int timeout = MIN(req->connect_timeout, req->timeout);
+    if (timeout > 0) {
+        blocktime = MIN(timeout*1000, blocktime);
+    }
+
+    bool tunnel = req->IsTunnelProxy();
+    bool https = req->IsHttps();
+    const char* connect_host = req->IsProxy() ? req->proxy_host.c_str() : req->host.c_str();
+    int connect_port = req->IsProxy() ? req->proxy_port : req->port;
+
+    unsigned int start_time = gettick_ms();
+    int connfd = ConnectTimeout(connect_host, connect_port, blocktime);
+    if (connfd < 0) {
+        hloge("connect %s:%d failed!", connect_host, connect_port);
+        return connfd;
+    }
+    tcp_nodelay(connfd, 1);
+
+    if (tunnel) {
+        int left = blocktime - (int)(gettick_ms() - start_time);
+        if (left <= 0) {
+            closesocket(connfd);
+            return NABS(ETIMEDOUT);
+        }
+        int ret = http_client_http_connect(connfd, req->host.c_str(), req->port,
+                                           req->proxy_username, req->proxy_password, left);
+        if (ret != 0) {
+            closesocket(connfd);
+            return ret;
+        }
+    }
+
+    cli->http_version = req->http_major;
+    if (https && cli->ssl == NULL) {
+        int ret = http_client_ssl_handshake(cli, connfd, req->host.c_str(), blocktime, start_time);
+        if (ret != 0) {
+            closesocket(connfd);
+            return ret;
+        }
+    }
+
+    cli->fd = connfd;
+    cli->keepalive_requests = 0;
+    cli->conn_key = HttpConnKey(*req);
+    return connfd;
+}
+
+int http_client_connect(http_client_t* cli, const char* host, int port, int https, int timeout) {
+    if (cli == NULL || host == NULL) return ERR_NULL_POINTER;
+
+    HttpRequest req;
+    req.scheme = https ? "https" : "http";
+    req.host = host;
+    req.port = port;
+    if (timeout > 0) {
+        req.connect_timeout = timeout;
+    }
+    return http_client_connect(cli, &req);
+}
+
+int http_client_close(http_client_t* cli) {
+    if (cli == NULL) return 0;
+    cli->Close();
+    return 0;
+}
+
+int http_client_send_data(http_client_t* cli, const char* data, int size) {
+    if (!cli || !data || size <= 0) return -1;
+
+    if (cli->ssl) {
+        return hssl_write(cli->ssl, data, size);
+    }
+
+    return send(cli->fd, data, size, 0);
+}
+
+int http_client_recv_data(http_client_t* cli, char* data, int size) {
+    if (!cli || !data || size <= 0) return -1;
+
+    if (cli->ssl) {
+        return hssl_read(cli->ssl, data, size);
+    }
+
+    return recv(cli->fd, data, size, 0);
+}
+
+static int http_client_exec(http_client_t* cli, HttpRequest* req, HttpResponse* resp) {
+    // connect -> send -> recv -> http_parser
+    int err = 0;
+    int connfd = cli->fd;
+    bool https = req->IsHttps();
+    bool keepalive = true;
+
+    time_t connect_timeout = MIN(req->connect_timeout, req->timeout);
+    time_t timeout_ms = req->timeout * 1000;
+    time_t start_time = gettick_ms();
+    time_t cur_time = start_time, left_time = INFINITE;
+
+#define CHECK_TIMEOUT                                           \
+    do {                                                        \
+        if (timeout_ms > 0) {                                   \
+            cur_time = gettick_ms();                            \
+            if (cur_time - start_time >= timeout_ms) {          \
+                goto timeout;                                   \
+            }                                                   \
+            left_time = timeout_ms - (cur_time - start_time);   \
+        }                                                       \
+    } while(0);
+
+    uint32_t retry_count = req->retry_count;
+    if (cli->keepalive_requests > 0 && retry_count == 0) {
+        // maybe keep-alive timeout, retry at least once
+        retry_count = 1;
+    }
+
+    char recvbuf[1024] = {0};
+    char* data = NULL;
+    size_t len  = 0;
+    int total_nsend, nsend, nrecv;
+    total_nsend = nsend = nrecv = 0;
+
+    HttpConnKey conn_key(*req);
+    int want_major = req->http_major;
+    if (connfd <= 0 || cli->conn_key != conn_key) {
+        cli->host = req->host;
+        cli->port = req->port;
+        cli->http_version = req->http_major;  // gates the ALPN "h2" offer in connect
+connect:
+        connfd = http_client_connect(cli, req);
+        if (connfd < 0) {
+            return connfd;
+        }
+        CHECK_TIMEOUT
+#ifdef WITH_OPENSSL
+        // Reconcile the parser with the ALPN protocol actually negotiated on
+        // this (re)connect. For an intended-h2 https request: use an h2 parser
+        // iff the peer selected "h2", otherwise HTTP/1.1. Correcting in BOTH
+        // directions matters when one http_client_t is reused across hosts --
+        // a stale V1 parser (from a previous non-h2 host) must be upgraded back
+        // to h2 for an h2 host, and vice versa.
+        if (https && req->http_major == 2 && cli->ssl) {
+            unsigned int alpn_len = 0;
+            const char* alpn = hssl_get_alpn_proto(cli->ssl, &alpn_len);
+            bool is_h2 = (alpn && alpn_len == 2 && memcmp(alpn, "h2", 2) == 0);
+            want_major = is_h2 ? 2 : 1;
+            if (want_major == 1) {
+                // fall back to HTTP/1.1 (not 1.0: keep-alive semantics)
+                req->http_major = 1;
+                req->http_minor = 1;
+            }
+        }
+#endif
+    }
+
+    if (cli->parser == NULL || cli->http_version != want_major) {
+        cli->parser = HttpParserPtr(HttpParser::New(HTTP_CLIENT,
+            (http_version)(want_major == 2 ? HTTP_V2 : HTTP_V1)));
+        if (cli->parser == NULL) {
+            hloge("New HttpParser failed!");
+            cli->Close();
+            return ERR_NULL_POINTER;
+        }
+        cli->http_version = want_major;
+    }
+
+    cli->parser->SubmitRequest(req);
+send:
+    data = NULL;
+    len  = 0;
+    while (cli->parser->GetSendData(&data, &len)) {
+        total_nsend = 0;
+        while (total_nsend < len) {
+            CHECK_TIMEOUT
+            if (left_time != INFINITE) {
+                so_sndtimeo(cli->fd, left_time);
+            }
+            if (req->cancel) goto disconnect;
+            nsend = http_client_send_data(cli, data + total_nsend, len - total_nsend);
+            if (req->cancel) goto disconnect;
+            if (nsend <= 0) {
+                CHECK_TIMEOUT
+                err = socket_errno();
+                if (err == EINTR) continue;
+                if (retry_count-- > 0 && left_time > req->retry_delay + connect_timeout * 1000) {
+                    err = 0;
+                    if (req->retry_delay > 0) hv_msleep(req->retry_delay);
+                    goto connect;
+                }
+                goto disconnect;
+            }
+            total_nsend += nsend;
+        }
+    }
+    if (resp == NULL) return 0;
+    cli->parser->InitResponse(resp);
+recv:
+    do {
+        CHECK_TIMEOUT
+        if (left_time != INFINITE) {
+            so_rcvtimeo(cli->fd, left_time);
+        }
+        if (req->cancel) goto disconnect;
+        nrecv = http_client_recv_data(cli, recvbuf, sizeof(recvbuf));
+        if (req->cancel) goto disconnect;
+        if (nrecv <= 0) {
+            CHECK_TIMEOUT
+            err = socket_errno();
+            if (err == EINTR) continue;
+            if (cli->parser->IsEof()) {
+                err = 0;
+                goto disconnect;
+            }
+            if (retry_count-- > 0 && left_time > req->retry_delay + connect_timeout * 1000) {
+                err = 0;
+                if (req->retry_delay > 0) hv_msleep(req->retry_delay);
+                goto connect;
+            }
+            goto disconnect;
+        }
+        int nparse = cli->parser->FeedRecvData(recvbuf, nrecv);
+        if (nparse != nrecv) {
+            return ERR_PARSE;
+        }
+        // HTTP2: flush frames nghttp2 queued while consuming this input --
+        // WINDOW_UPDATE (as we consume the response body), SETTINGS/PING ACK,
+        // and request-body DATA that was deferred by flow control. Drain inline
+        // (must NOT jump back to the `send:` label, which would re-run
+        // InitResponse and wipe the accumulated response body).
+        if (req->http_major == 2) {
+            char* sdata = NULL;
+            size_t slen = 0;
+            while (cli->parser->GetSendData(&sdata, &slen) > 0) {
+                if (req->cancel) goto disconnect;
+                total_nsend = 0;
+                while (total_nsend < (int)slen) {
+                    nsend = http_client_send_data(cli, sdata + total_nsend, slen - total_nsend);
+                    if (nsend <= 0) goto disconnect;
+                    total_nsend += nsend;
+                }
+            }
+        }
+    } while(!cli->parser->IsComplete());
+
+    keepalive = req->IsKeepAlive() && resp->IsKeepAlive();
+    if (keepalive) {
+        ++cli->keepalive_requests;
+    } else {
+        cli->Close();
+    }
+    return 0;
+timeout:
+    err = ERR_TASK_TIMEOUT;
+disconnect:
+    cli->Close();
+    return err;
+}
+
+int http_client_send_header(http_client_t* cli, HttpRequest* req) {
+    if (!cli || !req) return ERR_NULL_POINTER;
+
+    http_client_make_request(cli, req);
+
+    return http_client_exec(cli, req, NULL);
+}
+
+int http_client_recv_response(http_client_t* cli, HttpResponse* resp) {
+    if (!cli || !resp) return ERR_NULL_POINTER;
+    if (!cli->parser) {
+        hloge("Call http_client_send_header first!");
+        return ERR_NULL_POINTER;
+    }
+
+    char recvbuf[1024] = {0};
+    cli->parser->InitResponse(resp);
+
+    do {
+        int nrecv = http_client_recv_data(cli, recvbuf, sizeof(recvbuf));
+        if (nrecv <= 0) {
+            int err = socket_errno();
+            if (err == EINTR) continue;
+            cli->Close();
+            return err;
+        }
+        int nparse = cli->parser->FeedRecvData(recvbuf, nrecv);
+        if (nparse != nrecv) {
+            return ERR_PARSE;
+        }
+    } while(!cli->parser->IsComplete());
+
+    return 0;
+}
+
+#ifdef WITH_CURL
+static size_t s_header_cb(char* buf, size_t size, size_t cnt, void* userdata) {
+    if (buf == NULL || userdata == NULL)    return 0;
+    size_t len = size * cnt;
+    std::string str(buf, len);
+    HttpResponse* resp = (HttpResponse*)userdata;
+    std::string::size_type pos = str.find_first_of(':');
+    if (pos == std::string::npos) {
+        if (strncmp(buf, "HTTP/", 5) == 0) {
+            // status line
+            //hlogd("%s", buf);
+            int http_major = 1, http_minor = 1, status_code = 200;
+            if (buf[5] == '1') {
+                // HTTP/1.1 200 OK\r\n
+                sscanf(buf, "HTTP/%d.%d %d", &http_major, &http_minor, &status_code);
+            }
+            else if (buf[5] == '2') {
+                // HTTP/2 200\r\n
+                sscanf(buf, "HTTP/%d %d", &http_major, &status_code);
+                http_minor = 0;
+            }
+            resp->http_major = http_major;
+            resp->http_minor = http_minor;
+            resp->status_code = (http_status)status_code;
+            if (resp->http_cb) {
+                resp->http_cb(resp, HP_MESSAGE_BEGIN, NULL, 0);
+            }
+        }
+    }
+    else {
+        // headers
+        std::string key = trim(str.substr(0, pos));
+        std::string value = trim(str.substr(pos+1));
+        resp->headers[key] = value;
+    }
+    return len;
+}
+
+static size_t s_body_cb(char* buf, size_t size, size_t cnt, void *userdata) {
+    if (buf == NULL || userdata == NULL)    return 0;
+    size_t len = size * cnt;
+    HttpMessage* resp = (HttpMessage*)userdata;
+    if (resp->http_cb) {
+        if (resp->content == NULL && resp->content_length == 0) {
+            resp->content = buf;
+            resp->content_length = len;
+            resp->http_cb(resp, HP_HEADERS_COMPLETE, NULL, 0);
+        }
+        resp->http_cb(resp, HP_BODY, buf, len);
+    } else {
+        resp->body.append(buf, len);
+    }
+    return len;
+}
+
+static int http_client_exec_curl(http_client_t* cli, HttpRequest* req, HttpResponse* resp) {
+    if (cli->curl == NULL) {
+        cli->curl = curl_easy_init();
+    }
+    CURL* curl = cli->curl;
+
+    // libcurl applies the configured proxy as URI forwarding for HTTP and
+    // CONNECT tunnelling for HTTPS.
+    // cli->curl is reused across requests, so always reset proxy options first
+    // (a stale PROXY / PROXYUSERPWD would otherwise leak into a later request
+    // that uses a different or no proxy).
+    curl_easy_setopt(curl, CURLOPT_PROXY, "");
+    curl_easy_setopt(curl, CURLOPT_PROXYUSERPWD, "");
+    if (req->IsProxy()) {
+        curl_easy_setopt(curl, CURLOPT_PROXY, req->proxy_host.c_str());
+        curl_easy_setopt(curl, CURLOPT_PROXYPORT, req->proxy_port);
+        if (!req->proxy_username.empty()) {
+            std::string userpwd = req->proxy_username + ":" + req->proxy_password;
+            curl_easy_setopt(curl, CURLOPT_PROXYUSERPWD, userpwd.c_str());
+        }
+    }
+
+    // SSL
+    if (req->IsHttps()) {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0);
+    }
+
+    // http2
+    if (req->http_major == 2) {
+#if LIBCURL_VERSION_NUM < 0x073100 // 7.49.0
+        curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_2_0);
+#else
+        // No Connection: Upgrade
+        curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
+#endif
+    }
+
+    // TCP_NODELAY
+    curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1);
+
+    // method
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, http_method_str(req->method));
+
+    // url
+    req->DumpUrl();
+    curl_easy_setopt(curl, CURLOPT_URL, req->url.c_str());
+    //hlogd("%s %s HTTP/%d.%d", http_method_str(req->method), req->url.c_str(), req->http_major, req->http_minor);
+
+    // headers
+    req->FillContentType();
+    struct curl_slist *headers = NULL;
+    for (auto& pair : req->headers) {
+        std::string header = pair.first;
+        header += ": ";
+        header += pair.second;
+        headers = curl_slist_append(headers, header.c_str());
+    }
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    // body
+    //struct curl_httppost* httppost = NULL;
+    //struct curl_httppost* lastpost = NULL;
+    if (req->body.size() == 0) {
+        req->DumpBody();
+        /*
+        if (req->body.size() == 0 &&
+            req->content_type == MULTIPART_FORM_DATA) {
+            for (auto& pair : req->mp) {
+                if (pair.second.filename.size() != 0) {
+                    curl_formadd(&httppost, &lastpost,
+                            CURLFORM_COPYNAME, pair.first.c_str(),
+                            CURLFORM_FILE, pair.second.filename.c_str(),
+                            CURLFORM_END);
+                }
+                else if (pair.second.content.size() != 0) {
+                    curl_formadd(&httppost, &lastpost,
+                            CURLFORM_COPYNAME, pair.first.c_str(),
+                            CURLFORM_COPYCONTENTS, pair.second.content.c_str(),
+                            CURLFORM_END);
+                }
+            }
+            if (httppost) {
+                curl_easy_setopt(curl, CURLOPT_HTTPPOST, httppost);
+            }
+        }
+        */
+    }
+    if (req->body.size() != 0) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, req->body.size());
+    }
+
+    if (req->connect_timeout > 0) {
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, req->connect_timeout);
+    }
+    if (req->timeout > 0) {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, req->timeout);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, s_body_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, resp);
+
+    curl_easy_setopt(curl, CURLOPT_HEADER, 0);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, s_header_cb);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, resp);
+
+    int ret = curl_easy_perform(curl);
+    /*
+    if (ret != 0) {
+        hloge("curl error: %d: %s", ret, curl_easy_strerror((CURLcode)ret));
+    }
+    if (resp->body.length() != 0) {
+        hlogd("[Response]\n%s", resp->body.c_str());
+    }
+    double total_time, name_time, conn_time, pre_time;
+    curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &total_time);
+    curl_easy_getinfo(curl, CURLINFO_NAMELOOKUP_TIME, &name_time);
+    curl_easy_getinfo(curl, CURLINFO_CONNECT_TIME, &conn_time);
+    curl_easy_getinfo(curl, CURLINFO_PRETRANSFER_TIME, &pre_time);
+    hlogd("TIME_INFO: %lf,%lf,%lf,%lf", total_time, name_time, conn_time, pre_time);
+    */
+
+    if (headers) {
+        curl_slist_free_all(headers);
+    }
+    /*
+    if (httppost) {
+        curl_formfree(httppost);
+    }
+    */
+
+    if (resp->http_cb) {
+        resp->http_cb(resp, HP_MESSAGE_COMPLETE, NULL, 0);
+    }
+
+    return ret;
+}
+
+const char* http_client_strerror(int errcode) {
+    return curl_easy_strerror((CURLcode)errcode);
+}
+
+#else
+
+const char* http_client_strerror(int errcode) {
+    return socket_strerror(errcode);
+}
+
+#endif
+
+static std::string http_client_redirect_url(const HttpRequest* req, const std::string& location) {
+    if (location.empty() || strstr(location.c_str(), "://") != NULL) {
+        return location;
+    }
+    if (location[0] != '/') {
+        return location;
+    }
+
+    HUrl base;
+    if (!base.parse(req->url) || base.scheme.empty() || base.host.empty()) {
+        return location;
+    }
+    return base.scheme + "://" + hv::NetAddr::to_string(base.host.c_str(), base.port) + location;
+}
+
+static void http_client_prepare_redirect(HttpRequest* req, const std::string& location) {
+    std::string redirect_url = http_client_redirect_url(req, location);
+    req->url = redirect_url;
+    req->headers.erase("Host");
+    req->ParseUrl();
+}
+
+static int http_client_send_impl(http_client_t* cli, HttpRequest* req, HttpResponse* resp, bool preserve_connection);
+
+static int http_client_redirect(http_client_t* cli, HttpRequest* req, HttpResponse* resp, bool preserve_connection) {
+    std::string location = resp->headers["Location"];
+    if (!location.empty()) {
+        hlogi("redirect %s => %s", req->url.c_str(), location.c_str());
+        http_client_prepare_redirect(req, location);
+        http_client_make_request(cli, req);
+        resp->Reset();
+
+        HttpConnKey redirect_key(*req);
+        if (!preserve_connection || cli->fd < 0 || cli->conn_key == redirect_key) {
+            return http_client_send_impl(cli, req, resp, preserve_connection);
+        }
+
+        http_client_t redirect_cli;
+        http_client_copy_settings(&redirect_cli, cli);
+        return http_client_send_impl(&redirect_cli, req, resp, false);
+    }
+    return 0;
+}
+
+static int http_client_send_impl(http_client_t* cli, HttpRequest* req, HttpResponse* resp, bool preserve_connection) {
+    if (req->http_cb) resp->http_cb = std::move(req->http_cb);
+
+#if WITH_CURL
+    int ret = http_client_exec_curl(cli, req, resp);
+#else
+    int ret = http_client_exec(cli, req, resp);
+#endif
+    if (ret != 0) return ret;
+
+    // redirect
+    if (req->redirect && HTTP_STATUS_IS_REDIRECT(resp->status_code)) {
+        return http_client_redirect(cli, req, resp, preserve_connection);
+    }
+    return 0;
+}
+
+int http_client_send(http_client_t* cli, HttpRequest* req, HttpResponse* resp) {
+    if (!cli || !req || !resp) return ERR_NULL_POINTER;
+
+    http_client_make_request(cli, req);
+    return http_client_send_impl(cli, req, resp, true);
+}
+
+int http_client_send(HttpRequest* req, HttpResponse* resp) {
+    if (!req || !resp) return ERR_NULL_POINTER;
+
+    http_client_t cli;
+    return http_client_send(&cli, req, resp);
+}
+
+// below for async
+static int http_client_exec_async(http_client_t* cli, HttpRequestPtr req, HttpResponseCallback resp_cb) {
+    if (cli->async_client_ == NULL) {
+        cli->mutex_.lock();
+        if (cli->async_client_ == NULL) {
+            cli->async_client_ = std::make_shared<hv::AsyncHttpClient>();
+        }
+        cli->mutex_.unlock();
+    }
+
+    return cli->async_client_->send(req, std::move(resp_cb));
+}
+
+int http_client_send_async(http_client_t* cli, HttpRequestPtr req, HttpResponseCallback resp_cb) {
+    if (!cli || !req) return ERR_NULL_POINTER;
+    http_client_make_request(cli, req.get());
+    return http_client_exec_async(cli, req, std::move(resp_cb));
+}
+
+static http_client_t* s_async_http_client = NULL;
+static void hv_destroy_default_async_http_client() {
+    hlogi("destory default http async client");
+    if (s_async_http_client) {
+        http_client_del(s_async_http_client);
+        s_async_http_client = NULL;
+    }
+}
+static http_client_t* hv_default_async_http_client() {
+    static std::mutex s_mutex;
+    if (s_async_http_client == NULL) {
+        s_mutex.lock();
+        if (s_async_http_client == NULL) {
+            hlogi("create default http async client");
+            s_async_http_client = http_client_new();
+            // NOTE: I have No better idea
+            atexit(hv_destroy_default_async_http_client);
+        }
+        s_mutex.unlock();
+    }
+    return s_async_http_client;
+}
+
+int http_client_send_async(HttpRequestPtr req, HttpResponseCallback resp_cb) {
+    if (req == NULL) return ERR_NULL_POINTER;
+
+    if (req->timeout == 0) {
+        req->timeout = DEFAULT_HTTP_TIMEOUT;
+    }
+
+    return http_client_exec_async(hv_default_async_http_client(), req, std::move(resp_cb));
+}

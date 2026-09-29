@@ -1,0 +1,106 @@
+#ifndef HV_FILE_CACHE_H_
+#define HV_FILE_CACHE_H_
+
+#include <memory>
+#include <map>
+#include <string>
+#include <mutex>
+
+#include "hbuf.h"
+#include "hstring.h"
+#include "LRUCache.h"
+
+#define HTTP_HEADER_MAX_LENGTH      4096        // 4K
+#define FILE_CACHE_MAX_NUM          100
+#define FILE_CACHE_MAX_SIZE         (1 << 22)   // 4M
+
+typedef struct file_cache_s {
+    std::string filepath;
+    struct stat st;
+    time_t      open_time;
+    time_t      stat_time;
+    uint32_t    stat_cnt;
+    HBuf        buf; // http_header + file_content
+    hbuf_t      filebuf;
+    hbuf_t      httpbuf;
+    char        last_modified[64];
+    char        etag[64];
+    std::string content_type;
+
+    file_cache_s() {
+        stat_cnt = 0;
+    }
+
+    bool is_modified() {
+        struct stat new_st;
+        // stat failed: treat as modified to force re-validation via reopen
+#ifdef OS_WIN
+        if (_wstat(hv::utf8_to_wchar(filepath).c_str(), (struct _stat*)&new_st) != 0)
+            return true;
+#else
+        if (stat(filepath.c_str(), &new_st) != 0)
+            return true;
+#endif
+        time_t mtime = st.st_mtime;
+        st = new_st;
+        return mtime != st.st_mtime;
+    }
+
+    bool is_complete() {
+        if(S_ISDIR(st.st_mode)) return filebuf.len > 0;
+        return filebuf.len == st.st_size;
+    }
+
+    void resize_buf(int filesize) {
+        buf.resize(HTTP_HEADER_MAX_LENGTH + filesize);
+        filebuf.base = buf.base + HTTP_HEADER_MAX_LENGTH;
+        filebuf.len = filesize;
+    }
+
+    // Prepend the response header into the space reserved before filebuf so the
+    // header + file content can be sent as one buffer (httpbuf). Returns false
+    // if the header does not fit the reserved space; the caller must then send
+    // the header and filebuf separately (filebuf stays intact either way).
+    bool prepend_header(const char* header, int len) {
+        if (len > HTTP_HEADER_MAX_LENGTH) return false;
+        httpbuf.base = filebuf.base - len;
+        httpbuf.len = len + filebuf.len;
+        memcpy(httpbuf.base, header, len);
+        return true;
+    }
+} file_cache_t;
+
+typedef std::shared_ptr<file_cache_t>           file_cache_ptr;
+
+class FileCache : public hv::LRUCache<std::string, file_cache_ptr> {
+public:
+    int             stat_interval;
+    int             expired_time;
+
+    FileCache(size_t capacity = FILE_CACHE_MAX_NUM);
+
+    struct OpenParam {
+        bool need_read;
+        int  max_read;
+        const char* path;
+        size_t  filesize;
+        int  error;
+
+        OpenParam() {
+            need_read = true;
+            max_read = FILE_CACHE_MAX_SIZE;
+            path = "/";
+            filesize = 0;
+            error = 0;
+        }
+    };
+    file_cache_ptr Open(const char* filepath, OpenParam* param);
+    bool Exists(const char* filepath) const;
+    bool Close(const char* filepath);
+    void RemoveExpiredFileCache();
+
+protected:
+    file_cache_ptr Get(const char* filepath);
+};
+
+#endif // HV_FILE_CACHE_H_

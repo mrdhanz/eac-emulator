@@ -100,17 +100,27 @@ DummyEOS_Logging_SetLogLevel(int category, int level) {
 
 EOS_DECLARE_FUNC(EOS_EResult)
 DummyEOS_ProductUserId_ToString(EOS_ProductUserId account_id, char* out_buffer, int32_t* in_out_buffer_length) {
+	auto* client = emulator_client::get_instance();
+	if (client == nullptr) {
+		return 1;
+	}
+
 	auto request = std::make_shared<id2string_request>();
 	request->user_id = account_id;
 
-	auto response = emulator_client::get_instance()->send_request<id2string_response>(request);
+	auto response = client->send_request<id2string_response>(request);
+	if (response == nullptr) {
+		return 1;
+	}
 	auto buffer = response->buffer;
 	auto buffer_size = response->buffer_size;
-	if (buffer != nullptr) {
+	if (buffer != nullptr && out_buffer != nullptr && in_out_buffer_length != nullptr) {
 		ZeroMemory(out_buffer, *in_out_buffer_length);
 		memcpy(out_buffer, buffer.c_str(), buffer_size + 1);
 	}
-	*in_out_buffer_length = buffer_size;
+	if (in_out_buffer_length != nullptr) {
+		*in_out_buffer_length = buffer_size;
+	}
 	PLOGI.printf("Writing: ProductUserId=%s len=%d", buffer.c_str(), buffer_size);
 
 	return response->result;

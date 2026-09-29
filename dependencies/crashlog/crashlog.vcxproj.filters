@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Header Files\win64">
+      <UniqueIdentifier>{6f89053c-14e3-4683-9b93-8caad32607a5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\win64">
+      <UniqueIdentifier>{481fb215-68fe-4e50-a92e-33560738096f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="includes\crashlog\address.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="includes\crashlog\crashlog.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="includes\crashlog\exception.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="includes\crashlog\win64\exception.hpp">
+      <Filter>Header Files\win64</Filter>
+    </ClInclude>
+    <ClInclude Include="includes\crashlog\win64\parser.hpp">
+      <Filter>Header Files\win64</Filter>
+    </ClInclude>
+    <ClInclude Include="includes\crashlog\win64\stacktrace.hpp">
+      <Filter>Header Files\win64</Filter>
+    </ClInclude>
+    <ClInclude Include="includes\crashlog\win64\symbols.hpp">
+      <Filter>Header Files\win64</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\address.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\crashlog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\win64\exception.cpp">
+      <Filter>Source Files\win64</Filter>
+    </ClCompile>
+    <ClCompile Include="src\win64\parser.cpp">
+      <Filter>Source Files\win64</Filter>
+    </ClCompile>
+    <ClCompile Include="src\win64\stacktrace.cpp">
+      <Filter>Source Files\win64</Filter>
+    </ClCompile>
+    <ClCompile Include="src\win64\symbols.cpp">
+      <Filter>Source Files\win64</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

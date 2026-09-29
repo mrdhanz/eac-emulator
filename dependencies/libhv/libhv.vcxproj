@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{FF5304D6-6690-436B-9B3F-C35210A138B2}</ProjectGuid>
+    <RootNamespace>libhv</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)lib\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>hv_static</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)lib\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>hv_static</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <AdditionalIncludeDirectories>.;include;3rd\include;src;base;ssl;event;event\wepoll;util;cpputil;evpp;http;http\server;http\client;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.;include;3rd\include;src;base;ssl;event;event\wepoll;util;cpputil;evpp;http;http\server;http\client;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>false</ConformanceMode>
+      <AdditionalIncludeDirectories>.;include;3rd\include;src;base;ssl;event;event\wepoll;util;cpputil;evpp;http;http\server;http\client;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <Optimization>MaxSpeed</Optimization>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>NDEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.;include;3rd\include;src;base;ssl;event;event\wepoll;util;cpputil;evpp;http;http\server;http\client;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="base\hbase.c" />
+    <ClCompile Include="base\herr.c" />
+    <ClCompile Include="base\hlog.c" />
+    <ClCompile Include="base\hmain.c" />
+    <ClCompile Include="base\hsocket.c" />
+    <ClCompile Include="base\htime.c" />
+    <ClCompile Include="base\hversion.c" />
+    <ClCompile Include="base\rbtree.c" />
+    <ClCompile Include="ssl\appletls.c" />
+    <ClCompile Include="ssl\gnutls.c" />
+    <ClCompile Include="ssl\hssl.c" />
+    <ClCompile Include="ssl\mbedtls.c" />
+    <ClCompile Include="ssl\nossl.c" />
+    <ClCompile Include="ssl\openssl.c" />
+    <ClCompile Include="ssl\wintls.c" />
+    <ClCompile Include="event\epoll.c" />
+    <ClCompile Include="event\evport.c" />
+    <ClCompile Include="event\hdns.c" />
+    <ClCompile Include="event\hevent.c" />
+    <ClCompile Include="event\hloop.c" />
+    <ClCompile Include="event\io_uring.c" />
+    <ClCompile Include="event\kqueue.c" />
+    <ClCompile Include="event\nio.c" />
+    <ClCompile Include="event\nlog.c" />
+    <ClCompile Include="event\noevent.c" />
+    <ClCompile Include="event\poll.c" />
+    <ClCompile Include="event\proxy.c" />
+    <ClCompile Include="event\rudp.c" />
+    <ClCompile Include="event\select.c" />
+    <ClCompile Include="event\socks5.c" />
+    <ClCompile Include="event\tls.c" />
+    <ClCompile Include="event\unpack.c" />
+    <ClCompile Include="event\wepoll\wepoll.c" />
+    <ClCompile Include="util\base64.c" />
+    <ClCompile Include="util\md5.c" />
+    <ClCompile Include="util\sha1.c" />
+    <ClCompile Include="cpputil\RAII.cpp" />
+    <ClCompile Include="cpputil\ThreadLocalStorage.cpp" />
+    <ClCompile Include="cpputil\hasync.cpp" />
+    <ClCompile Include="cpputil\hdir.cpp" />
+    <ClCompile Include="cpputil\hpath.cpp" />
+    <ClCompile Include="cpputil\hstring.cpp" />
+    <ClCompile Include="cpputil\hurl.cpp" />
+    <ClCompile Include="cpputil\ifconfig.cpp" />
+    <ClCompile Include="cpputil\iniparser.cpp" />
+    <ClCompile Include="http\Http1Parser.cpp" />
+    <ClCompile Include="http\Http2Parser.cpp" />
+    <ClCompile Include="http\HttpMessage.cpp" />
+    <ClCompile Include="http\HttpParser.cpp" />
+    <ClCompile Include="http\WebSocketChannel.cpp" />
+    <ClCompile Include="http\WebSocketParser.cpp" />
+    <ClCompile Include="http\http_content.cpp" />
+    <ClCompile Include="http\http_parser.c" />
+    <ClCompile Include="http\httpdef.c" />
+    <ClCompile Include="http\multipart_parser.c" />
+    <ClCompile Include="http\websocket_parser.c" />
+    <ClCompile Include="http\wsdef.c" />
+    <ClCompile Include="http\server\FileCache.cpp" />
+    <ClCompile Include="http\server\HttpHandler.cpp" />
+    <ClCompile Include="http\server\HttpMiddleware.cpp" />
+    <ClCompile Include="http\server\HttpResponseWriter.cpp" />
+    <ClCompile Include="http\server\HttpServer.cpp" />
+    <ClCompile Include="http\server\HttpService.cpp" />
+    <ClCompile Include="http\server\http_page.cpp" />
+    <ClCompile Include="http\client\AsyncHttpClient.cpp" />
+    <ClCompile Include="http\client\HttpClient.cpp" />
+    <ClCompile Include="http\client\WebSocketClient.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hv.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

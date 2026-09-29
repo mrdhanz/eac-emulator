@@ -22,7 +22,9 @@ void emulator_client::connect(int tcp_port) {
 }
 
 void emulator_client::send_packet(std::shared_ptr<packet> packet) {
-	sender->send_packet(packet);
+	if (sender) {
+		sender->send_packet(packet);
+	}
 }
 
 emulator_client* emulator_client::get_instance() {
@@ -34,11 +36,21 @@ std::shared_ptr<response> emulator_client::_request(std::shared_ptr<request> con
 	request->serialize(serialized);
 
 	auto res = requests::post(std::format("http://{}:{}/task", address, http_port).c_str(), serialized.dump());
+	if (res == nullptr) {
+		PLOGE.printf("[HTTP] Failed to connect to emulator server at %s:%d", address.c_str(), http_port);
+		return nullptr;
+	}
 	if (res->status_code != 200) {
 		PLOGE.printf("[HTTP] The server has returned an error: %d", res->status_code);
 		return nullptr;
 	}
-	nlohmann::json json = nlohmann::json::parse(res->body);
+	nlohmann::json json;
+	try {
+		json = nlohmann::json::parse(res->body);
+	} catch (const std::exception& e) {
+		PLOGE.printf("[HTTP] Failed to parse response JSON: %s", e.what());
+		return nullptr;
+	}
 	PLOGI.printf("[HTTP] Response received: %s", json.dump().c_str());
 	auto response = session_factory::create_response(json["id"]);
 	if (response == nullptr) {

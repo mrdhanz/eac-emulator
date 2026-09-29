@@ -11,7 +11,19 @@
 
 void login_callback(const EOS_Connect_OnLoginCallback completion_delegate, void* client_data, std::shared_ptr<login_response> response) {
 	utils::sleep(400);
+	if (!completion_delegate) {
+		return;
+	}
 	EOS_Connect_LoginCallbackInfo info{};
+	if (response == nullptr) {
+		PLOGE.printf("Login failed: no response from proxy/emulator server");
+		info.ResultCode = 1;
+		info.ClientData = client_data;
+		info.LocalUserId = 0;
+		info.ContinuanceToken = 0;
+		completion_delegate(&info);
+		return;
+	}
 	info.ResultCode = response->result_code;
 	info.ClientData = client_data;
 	info.LocalUserId = response->local_user_id;
@@ -22,33 +34,52 @@ void login_callback(const EOS_Connect_OnLoginCallback completion_delegate, void*
 
 EOS_DECLARE_FUNC(void)
 DummyEOS_Connect_Login(EOS_HConnect handle, const EOS_Connect_LoginOptions* options, void* client_data, const EOS_Connect_OnLoginCallback completion_delegate) {
-	auto request = std::make_shared<login_request>();
-	request->api_version = options->ApiVersion;
-
-	request->has_credentials = options->Credentials != nullptr;
-	if (options->Credentials != nullptr) {
-		request->credentials.ApiVersion = options->Credentials->ApiVersion;
-		request->credentials.Token = nullable_string(options->Credentials->Token);
-		request->credentials.Type = options->Credentials->Type;
+	auto* client = emulator_client::get_instance();
+	if (client == nullptr) {
+		PLOGE.printf("DummyEOS_Connect_Login: emulator_client instance is null");
+		if (completion_delegate) {
+			std::thread(login_callback, completion_delegate, client_data, nullptr).detach();
+		}
+		return;
 	}
 
-	request->has_login_info = options->UserLoginInfo != nullptr;
-	if (options->UserLoginInfo != nullptr) {
-		request->user_login_info.ApiVersion = options->UserLoginInfo->ApiVersion;
-		request->user_login_info.DisplayName = nullable_string(options->UserLoginInfo->DisplayName);
-		request->user_login_info.NsaIdToken = nullable_string(options->UserLoginInfo->NsaIdToken);
+	auto request = std::make_shared<login_request>();
+	if (options != nullptr) {
+		request->api_version = options->ApiVersion;
+
+		request->has_credentials = options->Credentials != nullptr;
+		if (options->Credentials != nullptr) {
+			request->credentials.ApiVersion = options->Credentials->ApiVersion;
+			request->credentials.Token = nullable_string(options->Credentials->Token);
+			request->credentials.Type = options->Credentials->Type;
+		}
+
+		request->has_login_info = options->UserLoginInfo != nullptr;
+		if (options->UserLoginInfo != nullptr) {
+			request->user_login_info.ApiVersion = options->UserLoginInfo->ApiVersion;
+			request->user_login_info.DisplayName = nullable_string(options->UserLoginInfo->DisplayName);
+			request->user_login_info.NsaIdToken = nullable_string(options->UserLoginInfo->NsaIdToken);
+		}
 	}
 
 	PLOGI.printf("Requesting login to proxy");
-	auto response = emulator_client::get_instance()->send_request<login_response>(request);
+	auto response = client->send_request<login_response>(request);
 	std::thread(login_callback, completion_delegate, client_data, response).detach();
 }
 
 EOS_DECLARE_FUNC(EOS_ELoginStatus)
 DummyEOS_Connect_GetLoginStatus(EOS_HConnect Handle, EOS_ProductUserId LocalUserId) {
+	auto* client = emulator_client::get_instance();
+	if (client == nullptr) {
+		return 0;
+	}
+
 	auto request = std::make_shared<login_status_request>();
 	request->user_id = LocalUserId;
 
-	auto response = emulator_client::get_instance()->send_request<login_status_response>(request);
+	auto response = client->send_request<login_status_response>(request);
+	if (response == nullptr) {
+		return 0;
+	}
 	return response->status;
 }

@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Source Files\forwarding">
+      <UniqueIdentifier>{a98ce147-3a95-464a-939e-2938a14bce0e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\forwarding">
+      <UniqueIdentifier>{6f9474fe-1ca8-4d51-a9e9-e31e6e96903f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\servers">
+      <UniqueIdentifier>{eec0bb2c-352c-47db-a2d5-a3ec58eb31e4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\servers">
+      <UniqueIdentifier>{0efd5d0e-26f5-4dc2-ae9a-9c607ecdf33a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\eos">
+      <UniqueIdentifier>{89e3a6cf-be72-46ff-b632-40436d93e117}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\eos">
+      <UniqueIdentifier>{db93b8e4-8090-410a-81c0-aa95fb528fc8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\handlers">
+      <UniqueIdentifier>{9767851d-ff54-4f4c-83b6-11f81cfec3dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\handlers">
+      <UniqueIdentifier>{d32fa8ba-8ca2-4824-a740-42cf761a2935}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\api">
+      <UniqueIdentifier>{9c7198bb-4b71-46ee-8f19-3fa4e138a0c2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\api">
+      <UniqueIdentifier>{0287a98e-4366-4e4b-9721-a3f1eb94cf54}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\common">
+      <UniqueIdentifier>{a9244673-549b-4395-a22c-a2daeb5e0242}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\common\api">
+      <UniqueIdentifier>{df8952ae-527d-419b-a0d3-35fb54ae6c05}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\common\protocol">
+      <UniqueIdentifier>{01b17d0c-f370-4352-8700-6cb40fa64132}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="bootstrapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="forwarding\forwarder.h">
+      <Filter>Header Files\forwarding</Filter>
+    </ClInclude>
+    <ClInclude Include="servers\websocket_server.h">
+      <Filter>Header Files\servers</Filter>
+    </ClInclude>
+    <ClInclude Include="servers\http_server.h">
+      <Filter>Header Files\servers</Filter>
+    </ClInclude>
+    <ClInclude Include="eos\eos_logger.h">
+      <Filter>Header Files\eos</Filter>
+    </ClInclude>
+    <ClInclude Include="eos\eos_platform.h">
+      <Filter>Header Files\eos</Filter>
+    </ClInclude>
+    <ClInclude Include="eos\eos_utils.h">
+      <Filter>Header Files\eos</Filter>
+    </ClInclude>
+    <ClInclude Include="eos\eos.h">
+      <Filter>Header Files\eos</Filter>
+    </ClInclude>
+    <ClInclude Include="eos\eos_connect.h">
+      <Filter>Header Files\eos</Filter>
+    </ClInclude>
+    <ClInclude Include="eos\eos_anticheat.h">
+      <Filter>Header Files\eos</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\handler_registry.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\platform\create_platform_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\common\initialize_eos_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\common\handshake_packet_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\anticheat\begin_session_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\notification\notify_message_to_server_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\anticheat\receive_message_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\anticheat\end_session_handler.h">
+      <Filter>Header Files\handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="api\api_handler_registry.h">
+      <Filter>Header Files\api</Filter>
+    </ClInclude>
+    <ClInclude Include="api\id2string_handler.h">
+      <Filter>Header Files\api</Filter>
+    </ClInclude>
+    <ClInclude Include="api\login_handler.h">
+      <Filter>Header Files\api</Filter>
+    </ClInclude>
+    <ClInclude Include="api\login_status_handler.h">
+      <Filter>Header Files\api</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="bootstrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="forwarding\exports.cpp">
+      <Filter>Source Files\forwarding</Filter>
+    </ClCompile>
+    <ClCompile Include="forwarding\forwarder.cpp">
+      <Filter>Source Files\forwarding</Filter>
+    </ClCompile>
+    <ClCompile Include="servers\websocket_server.cpp">
+      <Filter>Source Files\servers</Filter>
+    </ClCompile>
+    <ClCompile Include="servers\http_server.cpp">
+      <Filter>Source Files\servers</Filter>
+    </ClCompile>
+    <ClCompile Include="eos\eos_platform.cpp">
+      <Filter>Source Files\eos</Filter>
+    </ClCompile>
+    <ClCompile Include="eos\eos.cpp">
+      <Filter>Source Files\eos</Filter>
+    </ClCompile>
+    <ClCompile Include="eos\eos_connect.cpp">
+      <Filter>Source Files\eos</Filter>
+    </ClCompile>
+    <ClCompile Include="eos\eos_anticheat.cpp">
+      <Filter>Source Files\eos</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\platform\create_platform_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\common\initialize_eos_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\common\handshake_packet_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\anticheat\begin_session_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\notification\notify_message_to_server_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\anticheat\receive_message_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\anticheat\end_session_handler.cpp">
+      <Filter>Source Files\handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="api\id2string_handler.cpp">
+      <Filter>Source Files\api</Filter>
+    </ClCompile>
+    <ClCompile Include="api\login_handler.cpp">
+      <Filter>Source Files\api</Filter>
+    </ClCompile>
+    <ClCompile Include="api\login_status_handler.cpp">
+      <Filter>Source Files\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\utils.cpp">
+      <Filter>Source Files\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\api\requests\id2string_request.cpp">
+      <Filter>Source Files\common\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\api\requests\login_request.cpp">
+      <Filter>Source Files\common\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\api\requests\login_status_request.cpp">
+      <Filter>Source Files\common\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\api\response\id2string_response.cpp">
+      <Filter>Source Files\common\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\api\response\login_response.cpp">
+      <Filter>Source Files\common\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\api\response\login_status_response.cpp">
+      <Filter>Source Files\common\api</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packet_codec.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packet_factory.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\begin_session_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\create_platform_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\end_session_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\handshake_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\initialize_eos_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\notify_message_to_server_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\protocol\packets\receive_message_packet.cpp">
+      <Filter>Source Files\common\protocol</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="exports.def">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
+</Project>

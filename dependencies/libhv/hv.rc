@@ -1,0 +1,35 @@
+#include <winresrc.h>
+
+VS_VERSION_INFO     VERSIONINFO
+FILEVERSION         1,3,4,0
+PRODUCTVERSION      1,3,4,0
+FILEFLAGSMASK       VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS           VS_FF_DEBUG
+#else
+FILEFLAGS           0x0L
+#endif
+FILEOS              VOS_NT
+FILETYPE            VFT_DLL
+FILESUBTYPE         VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName", "https://github.com/ithewei/libhv"
+            VALUE "FileDescription", "hv Library"
+            VALUE "FileVersion", "1.3.4"
+            VALUE "InternalName", "hv"
+            VALUE "LegalCopyright", "Copyright (C) 2020 ithewei All rights reserved."
+            VALUE "LegalTrademarks", "hv"
+            VALUE "OriginalFilename", "hv.dll"
+            VALUE "ProductName", "hv"
+            VALUE "ProductVersion", "1.3.4"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 0x04B0
+    END
+END

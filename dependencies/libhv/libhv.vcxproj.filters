@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="base">
+      <UniqueIdentifier>{122d2b51-5129-4e08-9df2-fc7490214c71}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ssl">
+      <UniqueIdentifier>{898e3b32-3d75-43a9-a9a3-5c7ffcf81bf8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="event">
+      <UniqueIdentifier>{6f9bc68e-5c4e-4f51-b8ae-247d4dcbe173}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="util">
+      <UniqueIdentifier>{459c5d07-28d8-4f81-817e-97645f8f53a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cpputil">
+      <UniqueIdentifier>{ea9b11e2-5a21-4fa3-94c6-e97be6a89c75}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="http">
+      <UniqueIdentifier>{83d47c47-320c-4ebc-9e2e-2e4a8b79f8fa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="http\server">
+      <UniqueIdentifier>{fbe0aee5-ec60-449e-b9b5-472ef919864d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="http\client">
+      <UniqueIdentifier>{4c98863f-b3b4-4b56-ab0e-26f582f3c054}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="event\wepoll">
+      <UniqueIdentifier>{2aa10a30-8d5f-40ad-a957-cfa5e27a6962}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="base\hbase.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\herr.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\hlog.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\hmain.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\hsocket.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\htime.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\hversion.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="base\rbtree.c">
+      <Filter>base</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\appletls.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\gnutls.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\hssl.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\mbedtls.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\nossl.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\openssl.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="ssl\wintls.c">
+      <Filter>ssl</Filter>
+    </ClCompile>
+    <ClCompile Include="event\epoll.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\evport.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\hdns.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\hevent.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\hloop.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\io_uring.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\kqueue.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\nio.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\nlog.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\noevent.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\poll.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\proxy.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\rudp.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\select.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\socks5.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\tls.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\unpack.c">
+      <Filter>event</Filter>
+    </ClCompile>
+    <ClCompile Include="event\wepoll\wepoll.c">
+      <Filter>event\wepoll</Filter>
+    </ClCompile>
+    <ClCompile Include="util\base64.c">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="util\md5.c">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="util\sha1.c">
+      <Filter>util</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\RAII.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\ThreadLocalStorage.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\hasync.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\hdir.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\hpath.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\hstring.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\hurl.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\ifconfig.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="cpputil\iniparser.cpp">
+      <Filter>cpputil</Filter>
+    </ClCompile>
+    <ClCompile Include="http\Http1Parser.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\Http2Parser.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\HttpMessage.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\HttpParser.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\WebSocketChannel.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\WebSocketParser.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\http_content.cpp">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\http_parser.c">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\httpdef.c">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\multipart_parser.c">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\websocket_parser.c">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\wsdef.c">
+      <Filter>http</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\FileCache.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\HttpHandler.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\HttpMiddleware.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\HttpResponseWriter.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\HttpServer.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\HttpService.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\server\http_page.cpp">
+      <Filter>http\server</Filter>
+    </ClCompile>
+    <ClCompile Include="http\client\AsyncHttpClient.cpp">
+      <Filter>http\client</Filter>
+    </ClCompile>
+    <ClCompile Include="http\client\HttpClient.cpp">
+      <Filter>http\client</Filter>
+    </ClCompile>
+    <ClCompile Include="http\client\WebSocketClient.cpp">
+      <Filter>http\client</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="hv.rc" />
+  </ItemGroup>
+</Project>

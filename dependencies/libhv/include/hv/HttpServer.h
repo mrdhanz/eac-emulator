@@ -1,0 +1,237 @@
+#ifndef HV_HTTP_SERVER_H_
+#define HV_HTTP_SERVER_H_
+
+#include <atomic>
+
+#include "hexport.h"
+#include "hssl.h"
+// #include "EventLoop.h"
+#include "HttpService.h"
+// #include "WebSocketServer.h"
+namespace hv {
+class EventLoop;
+struct WebSocketService;
+}
+using hv::HttpService;
+using hv::WebSocketService;
+
+// Runtime statistics of the http server.
+// NOTE: counters are cumulative and monotonic (except cur_connections);
+// compute QPS by sampling total_requests twice and dividing the delta by
+// the elapsed time.
+// NOTE: in multi-process mode (worker_processes > 0) the counters are
+// per-process, not aggregated across processes.
+struct HttpServerStat {
+    std::atomic<uint64_t> cur_connections;   // current active connections
+    std::atomic<uint64_t> total_connections; // cumulative handled connections
+    std::atomic<uint64_t> total_requests;    // cumulative completed requests
+    std::atomic<uint64_t> total_recv_bytes;  // cumulative received bytes
+    std::atomic<uint64_t> total_send_bytes;  // cumulative sent bytes
+
+    HttpServerStat()
+        : cur_connections(0)
+        , total_connections(0)
+        , total_requests(0)
+        , total_recv_bytes(0)
+        , total_send_bytes(0)
+    {}
+};
+
+typedef struct http_server_s {
+    char host[64];
+    int port; // http_port
+    int https_port;
+    int http_version;
+    int worker_processes;
+    int worker_threads;
+    uint32_t worker_connections; // max_connections = workers * worker_connections
+    HttpService* service; // http service
+    WebSocketService* ws; // websocket service
+    void* userdata;
+    int listenfd[2]; // 0: http, 1: https
+    void* privdata;
+    // hooks
+    std::function<void()> onWorkerStart;
+    std::function<void()> onWorkerStop;
+    // @brief called on a new connection accepted, before any HTTP parsing.
+    //        return false to reject (close) the connection.
+    std::function<bool(hio_t* io)> onAccept;
+    // @brief called when a connection is closed.
+    std::function<void(hio_t* io)> onClose;
+    // graceful shutdown flag: when set, new connections are rejected and
+    // keep-alive connections are closed after their current response.
+    std::atomic<bool> draining;
+    // stat counters
+    HttpServerStat stat;
+    // SSL/TLS
+    hssl_ctx_t  ssl_ctx;
+    unsigned    alloced_ssl_ctx: 1;
+
+#ifdef __cplusplus
+    http_server_s() {
+        strcpy(host, "0.0.0.0");
+        // port = DEFAULT_HTTP_PORT;
+        // https_port = DEFAULT_HTTPS_PORT;
+        // port = 8080;
+        // https_port = 8443;
+        port = https_port = -1;
+        http_version = 1;
+        worker_processes = 0;
+        worker_threads = 0;
+        worker_connections = 1024;
+        service = NULL;
+        ws = NULL;
+        listenfd[0] = listenfd[1] = -1;
+        userdata = NULL;
+        privdata = NULL;
+        draining = false;
+        // SSL/TLS
+        ssl_ctx = NULL;
+        alloced_ssl_ctx = 0;
+    }
+#endif
+} http_server_t;
+
+// @param wait: Whether to occupy current thread
+HV_EXPORT int http_server_run(http_server_t* server, int wait = 1);
+
+// NOTE: stop all loops and join all threads
+HV_EXPORT int http_server_stop(http_server_t* server);
+
+// Graceful shutdown: stop accepting new connections/requests, then close.
+// Removes the listen read event on every loop and sets draining so keep-alive
+// connections are closed after their current response. In-flight requests are
+// allowed to finish. Waits until there are no active connections or the timeout
+// elapses, then calls http_server_stop.
+// @param timeout_ms: max time to wait for in-flight connections to drain;
+//        default 60s. 0 means do not wait; <0 means wait indefinitely (not
+//        recommended: long-lived connections such as WebSocket/SSE may never
+//        close, blocking forever).
+// NOTE: single-process (multi-threaded) mode only; not supported in
+//       multi-process mode (worker_processes > 0).
+HV_EXPORT int http_server_graceful_stop(http_server_t* server, int timeout_ms = 60000);
+
+// Stop accepting: remove the listen read event on every loop and set draining
+// (keep-alive -> close). Existing in-flight requests continue; does not wait or
+// stop the loops. The listen fd is not closed here (closed once on stop()).
+// NOTE: single-process (multi-threaded) mode only.
+HV_EXPORT int http_server_stop_accept(http_server_t* server);
+
+/*
+#include "HttpServer.h"
+using namespace hv;
+
+int main() {
+    HttpService service;
+    service.GET("/ping", [](HttpRequest* req, HttpResponse* resp) {
+        resp->body = "pong";
+        return 200;
+    });
+
+    HttpServer server(&service);
+    server.setThreadNum(4);
+    server.run(":8080");
+    return 0;
+}
+*/
+
+namespace hv {
+
+class HV_EXPORT HttpServer : public http_server_t {
+public:
+    HttpServer(HttpService* service = NULL)
+        : http_server_t()
+    {
+        this->service = service;
+    }
+    ~HttpServer() { stop(); }
+
+    void registerHttpService(HttpService* service) {
+        this->service = service;
+    }
+
+    std::shared_ptr<hv::EventLoop> loop(int idx = -1);
+
+    void setHost(const char* host = "0.0.0.0") {
+        if (host) strcpy(this->host, host);
+    }
+
+    void setPort(int port = 0, int ssl_port = -1) {
+        if (port >= 0) this->port = port;
+        if (ssl_port >= 0) this->https_port = ssl_port;
+    }
+    void setListenFD(int fd = -1, int ssl_fd = -1) {
+        if (fd >= 0) this->listenfd[0] = fd;
+        if (ssl_fd >= 0) this->listenfd[1] = ssl_fd;
+    }
+
+    void setProcessNum(int num) {
+        this->worker_processes = num;
+    }
+
+    void setThreadNum(int num) {
+        this->worker_threads = num;
+    }
+
+    void setMaxWorkerConnectionNum(uint32_t num) {
+        this->worker_connections = num;
+    }
+    size_t connectionNum();
+
+    // runtime statistics (connections / requests, for QPS etc.)
+    const HttpServerStat& getStat() { return stat; }
+
+    // SSL/TLS
+    int setSslCtx(hssl_ctx_t ssl_ctx) {
+        this->ssl_ctx = ssl_ctx;
+        return 0;
+    }
+    int newSslCtx(hssl_ctx_opt_t* opt) {
+        // NOTE: hssl_ctx_free in http_server_stop
+        hssl_ctx_t ssl_ctx = hssl_ctx_new(opt);
+        if (ssl_ctx == NULL) return -1;
+        this->alloced_ssl_ctx = 1;
+        return setSslCtx(ssl_ctx);
+    }
+
+    // run(":8080")
+    // run("0.0.0.0:8080")
+    // run("[::]:8080")
+    int run(const char* ip_port = NULL, bool wait = true) {
+        if (ip_port) {
+            hv::NetAddr listen_addr(ip_port);
+            if (listen_addr.ip.size() != 0) setHost(listen_addr.ip.c_str());
+            if (listen_addr.port != 0)      setPort(listen_addr.port);
+        }
+        return http_server_run(this, wait);
+    }
+
+    // start(":8080")
+    // start("0.0.0.0:8080")
+    // start("[::]:8080")
+    // NOTE: when started with port=0, the OS-assigned port is available in
+    // this->port / this->https_port after start() returns.
+    int start(const char* ip_port = NULL) {
+        return run(ip_port, false);
+    }
+
+    int stop() {
+        return http_server_stop(this);
+    }
+
+    // Graceful shutdown: stop accepting, let in-flight requests finish, then stop.
+    // @param timeout_ms: default 60s; 0 no wait; <0 wait indefinitely (not
+    //        recommended). See http_server_graceful_stop.
+    int gracefulStop(int timeout_ms = 60000) {
+        return http_server_graceful_stop(this, timeout_ms);
+    }
+
+    // Stop accepting new connections/requests without stopping the loops.
+    int stopAccept() {
+        return http_server_stop_accept(this);
+    }
+};
+
+}
+
+#endif // HV_HTTP_SERVER_H_

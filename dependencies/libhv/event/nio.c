@@ -1,0 +1,636 @@
+#include "iowatcher.h"
+#include "hevent.h"
+#include "hsocket.h"
+#include "hssl.h"
+#include "hlog.h"
+#include "herr.h"
+#include "hthread.h"
+#include "proxy.h"
+#include "tls.h"
+
+static void __connect_timeout_cb(htimer_t* timer) {
+    hio_t* io = (hio_t*)timer->privdata;
+    if (io) {
+        char localaddrstr[SOCKADDR_STRLEN] = {0};
+        char peeraddrstr[SOCKADDR_STRLEN] = {0};
+        hlogw("connect timeout [%s] <=> [%s]",
+                SOCKADDR_STR(io->localaddr, localaddrstr),
+                SOCKADDR_STR(io->peeraddr, peeraddrstr));
+        io->error = ETIMEDOUT;
+        hio_close(io);
+    }
+}
+
+static void __close_timeout_cb(htimer_t* timer) {
+    hio_t* io = (hio_t*)timer->privdata;
+    if (io) {
+        char localaddrstr[SOCKADDR_STRLEN] = {0};
+        char peeraddrstr[SOCKADDR_STRLEN] = {0};
+        hlogw("close timeout [%s] <=> [%s]",
+                SOCKADDR_STR(io->localaddr, localaddrstr),
+                SOCKADDR_STR(io->peeraddr, peeraddrstr));
+        io->error = ETIMEDOUT;
+        hio_close(io);
+    }
+}
+
+static void __accept_cb(hio_t* io) {
+    hio_accept_cb(io);
+}
+
+static void __connect_cb(hio_t* io) {
+    hio_del_connect_timer(io);
+    hio_connect_cb(io);
+}
+
+static void __read_cb(hio_t* io, void* buf, int readbytes) {
+    // printd("> %.*s\n", readbytes, buf);
+    io->last_read_hrtime = io->loop->cur_hrtime;
+    hio_handle_read(io, buf, readbytes);
+}
+
+static void __write_cb(hio_t* io, const void* buf, int writebytes) {
+    // printd("< %.*s\n", writebytes, buf);
+    io->last_write_hrtime = io->loop->cur_hrtime;
+    hio_write_cb(io, buf, writebytes);
+}
+
+static void __close_cb(hio_t* io) {
+    // printd("close fd=%d\n", io->fd);
+    hio_del_connect_timer(io);
+    hio_del_close_timer(io);
+    hio_del_read_timer(io);
+    hio_del_write_timer(io);
+    hio_del_keepalive_timer(io);
+    hio_del_heartbeat_timer(io);
+    hio_close_cb(io);
+}
+
+static void hio_handle_events(hio_t* io);
+
+static bool nio_is_establishing(hio_t* io) {
+    return io->phase >= HIO_PHASE_CONNECTING &&
+           io->phase < HIO_PHASE_ESTABLISHED;
+}
+
+static void nio_flush_write_queue(hio_t* io) {
+    hrecursive_mutex_lock(&io->write_mutex);
+    bool pending = !write_queue_empty(&io->write_queue);
+    hrecursive_mutex_unlock(&io->write_mutex);
+    if (!io->closed && pending) {
+        hio_add(io, hio_handle_events, HV_WRITE);
+    }
+}
+
+static void nio_connect_ready(hio_t* io) {
+    io->phase = HIO_PHASE_ESTABLISHED;
+    __connect_cb(io);
+    // Keep proxy metadata available during connect_cb. The transport no longer
+    // needs it after the application has accepted the established connection.
+    if (io->proxy) {
+        proxy_ctx_free(io->proxy);
+        io->proxy = NULL;
+    }
+    nio_flush_write_queue(io);
+}
+
+static void nio_accept_ready(hio_t* io) {
+    io->phase = HIO_PHASE_ESTABLISHED;
+    __accept_cb(io);
+}
+
+static void nio_accept(hio_t* io) {
+    // printd("nio_accept listenfd=%d\n", io->fd);
+    int connfd = 0, err = 0, accept_cnt = 0;
+    socklen_t addrlen;
+    hio_t* connio = NULL;
+    while (accept_cnt++ < 3) {
+        addrlen = sizeof(sockaddr_u);
+        connfd = accept(io->fd, io->peeraddr, &addrlen);
+        if (connfd < 0) {
+            err = socket_errno();
+            if (err == EAGAIN || err == EINTR) {
+                return;
+            } else {
+                perror("accept");
+                io->error = err;
+                goto accept_error;
+            }
+        }
+        addrlen = sizeof(sockaddr_u);
+        getsockname(connfd, io->localaddr, &addrlen);
+        connio = hio_get(io->loop, connfd);
+        // NOTE: inherit from listenio
+        connio->accept_cb = io->accept_cb;
+        connio->userdata = io->userdata;
+        connio->proxy = proxy_ctx_dup(io->proxy);
+        if (io->unpack_setting) {
+            hio_set_unpack(connio, io->unpack_setting);
+        }
+
+        if (io->io_type == HIO_TYPE_SSL) {
+            hio_add(connio, hio_handle_events, HV_READ);
+            if (tls_server_handshake_start(io, connio) == 0 &&
+                connio->phase == HIO_PHASE_TLS_ESTABLISHED) {
+                nio_accept_ready(connio);
+            }
+        }
+        else {
+            // NOTE: SSL call accept_cb after handshake finished
+            nio_accept_ready(connio);
+        }
+    }
+    return;
+
+accept_error:
+    hloge("listenfd=%d accept error: %s:%d", io->fd, socket_strerror(io->error), io->error);
+    // NOTE: Don't close listen fd automatically anyway.
+    // hio_close(io);
+}
+
+// After the transport is connected (and, if using SOCKS5, after the proxy
+// handshake completed), start the SSL handshake or deliver connect_cb.
+static void nio_connect_established(hio_t* io) {
+    if (io->io_type == HIO_TYPE_SSL) {
+        if (tls_client_handshake_start(io) == 0 &&
+            io->phase == HIO_PHASE_TLS_ESTABLISHED) {
+            nio_connect_ready(io);
+        }
+    }
+    else {
+        // NOTE: SSL call connect_cb after handshake finished
+        nio_connect_ready(io);
+    }
+}
+
+static void nio_connect(hio_t* io) {
+    // printd("nio_connect connfd=%d\n", io->fd);
+    socklen_t addrlen = sizeof(sockaddr_u);
+    int ret = getpeername(io->fd, io->peeraddr, &addrlen);
+    if (ret < 0) {
+        io->error = socket_errno();
+        goto connect_error;
+    }
+    else {
+        addrlen = sizeof(sockaddr_u);
+        getsockname(io->fd, io->localaddr, &addrlen);
+
+        // Proxy: the TCP connection is to the proxy; run its protocol handshake
+        // before TLS or the user connect callback.
+        if (io->proxy) {
+            proxy_handshake_start(io);
+            return;
+        }
+
+        nio_connect_established(io);
+        return;
+    }
+
+connect_error:
+    hlogw("connfd=%d connect error: %s:%d", io->fd, socket_strerror(io->error), io->error);
+    hio_close(io);
+}
+
+static void nio_connect_event_cb(hevent_t* ev) {
+    hio_t* io = (hio_t*)ev->userdata;
+    uint32_t id = (uintptr_t)ev->privdata;
+    if (io->id != id) return;
+    nio_connect(io);
+}
+
+static int nio_connect_async(hio_t* io) {
+    hevent_t ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.cb = nio_connect_event_cb;
+    ev.userdata = io;
+    ev.privdata = (void*)(uintptr_t)io->id;
+    hloop_post_event(io->loop, &ev);
+    return 0;
+}
+
+static int __nio_read(hio_t* io, void* buf, int len) {
+    int nread = 0;
+    switch (io->io_type) {
+    case HIO_TYPE_SSL:
+        nread = hssl_read(io->ssl, buf, len);
+        break;
+    case HIO_TYPE_TCP:
+        nread = recv(io->fd, buf, len, 0);
+        break;
+    case HIO_TYPE_UDP:
+    case HIO_TYPE_KCP:
+    case HIO_TYPE_IP:
+    {
+        socklen_t addrlen = sizeof(sockaddr_u);
+        nread = recvfrom(io->fd, buf, len, 0, io->peeraddr, &addrlen);
+    }
+        break;
+    default:
+        nread = read(io->fd, buf, len);
+        break;
+    }
+    // hlogd("read retval=%d", nread);
+    return nread;
+}
+
+static int __nio_write(hio_t* io, const void* buf, int len, struct sockaddr* addr) {
+    int nwrite = 0;
+    switch (io->io_type) {
+    case HIO_TYPE_SSL:
+        nwrite = hssl_write(io->ssl, buf, len);
+        break;
+    case HIO_TYPE_TCP:
+    {
+        int flag = 0;
+#ifdef MSG_NOSIGNAL
+        flag |= MSG_NOSIGNAL;
+#endif
+        nwrite = send(io->fd, buf, len, flag);
+    }
+        break;
+    case HIO_TYPE_UDP:
+    case HIO_TYPE_KCP:
+    case HIO_TYPE_IP:
+    {
+        if (addr == NULL) addr = io->peeraddr;
+        nwrite = sendto(io->fd, buf, len, 0, addr, SOCKADDR_LEN(addr));
+        if (((sockaddr_u*)io->localaddr)->sin.sin_port == 0) {
+            socklen_t addrlen = sizeof(sockaddr_u);
+            getsockname(io->fd, io->localaddr, &addrlen);
+        }
+    }
+        break;
+    default:
+        nwrite = write(io->fd, buf, len);
+        break;
+    }
+    // hlogd("write retval=%d", nwrite);
+    return nwrite;
+}
+
+static void nio_read(hio_t* io) {
+    // printd("nio_read fd=%d\n", io->fd);
+    void* buf;
+    int len = 0, nread = 0, err = 0;
+read:
+    buf = io->readbuf.base + io->readbuf.tail;
+    if (io->read_flags & HIO_READ_UNTIL_LENGTH) {
+        len = io->read_until_length - (io->readbuf.tail - io->readbuf.head);
+    } else {
+        len = io->readbuf.len - io->readbuf.tail;
+    }
+    assert(len > 0);
+    nread = __nio_read(io, buf, len);
+    // printd("read retval=%d\n", nread);
+    if (nread < 0) {
+        err = socket_errno();
+        if (err == EAGAIN || err == EINTR) {
+            // goto read_done;
+            return;
+        } else if (err == EMSGSIZE) {
+            nread = len;
+        } else {
+            // perror("read");
+            io->error = err;
+            goto read_error;
+        }
+    }
+    if (nread == 0 && (io->io_type & HIO_TYPE_SOCK_STREAM)) {
+        goto disconnect;
+    }
+    if (nread < len) {
+        // NOTE: make string friendly
+        ((char*)buf)[nread] = '\0';
+    }
+    io->readbuf.tail += nread;
+    __read_cb(io, buf, nread);
+    if (nread == len && !io->closed) {
+        // NOTE: ssl may have own cache
+        if (io->io_type == HIO_TYPE_SSL) {
+            // read continue
+            goto read;
+        }
+    }
+    return;
+read_error:
+disconnect:
+    if (io->io_type & HIO_TYPE_SOCK_STREAM) {
+        hio_close(io);
+    }
+}
+
+static void nio_write(hio_t* io) {
+    // printd("nio_write fd=%d\n", io->fd);
+    int nwrite = 0, err = 0;
+    hrecursive_mutex_lock(&io->write_mutex);
+write:
+    if (write_queue_empty(&io->write_queue)) {
+        hrecursive_mutex_unlock(&io->write_mutex);
+        if (io->close) {
+            io->close = 0;
+            hio_close(io);
+        }
+        return;
+    }
+    offset_buf_t* pbuf = write_queue_front(&io->write_queue);
+    char* base = pbuf->base;
+    char* buf = base + pbuf->offset;
+    int len = pbuf->len - pbuf->offset;
+    struct sockaddr* addr = NULL;
+    if (io->io_type & (HIO_TYPE_SOCK_DGRAM | HIO_TYPE_SOCK_RAW)) {
+        addr = (struct sockaddr*)base;
+    }
+    nwrite = __nio_write(io, buf, len, addr);
+    // printd("write retval=%d\n", nwrite);
+    if (nwrite < 0) {
+        err = socket_errno();
+        if (err == EAGAIN || err == EINTR) {
+            hrecursive_mutex_unlock(&io->write_mutex);
+            return;
+        } else {
+            // perror("write");
+            io->error = err;
+            goto write_error;
+        }
+    }
+    if (nwrite == 0 && (io->io_type & HIO_TYPE_SOCK_STREAM)) {
+        goto disconnect;
+    }
+    pbuf->offset += nwrite;
+    io->write_bufsize -= nwrite;
+    __write_cb(io, buf, nwrite);
+    if (nwrite == len) {
+        // NOTE: after write_cb, pbuf maybe invalid.
+        // HV_FREE(pbuf->base);
+        HV_FREE(base);
+        write_queue_pop_front(&io->write_queue);
+        if (!io->closed) {
+            // write continue
+            goto write;
+        }
+    }
+    hrecursive_mutex_unlock(&io->write_mutex);
+    return;
+write_error:
+disconnect:
+    hrecursive_mutex_unlock(&io->write_mutex);
+    if (io->io_type & HIO_TYPE_SOCK_STREAM) {
+        hio_close(io);
+    }
+}
+
+static void hio_handle_events(hio_t* io) {
+    hio_phase_e phase = io->phase;
+    if (phase == HIO_PHASE_PROXY_HANDSHAKING) {
+        int revents = io->revents;
+        io->revents = 0;
+        if (revents & HV_READ) {
+            proxy_handshake_read(io);
+        }
+        if (io->phase == HIO_PHASE_PROXY_ESTABLISHED) {
+            nio_connect_established(io);
+        }
+        return;
+    }
+    if (phase == HIO_PHASE_TLS_SERVER_HANDSHAKING ||
+        phase == HIO_PHASE_TLS_CLIENT_HANDSHAKING) {
+        io->revents = 0;
+        tls_handshake_step(io);
+        if (io->phase == HIO_PHASE_TLS_ESTABLISHED) {
+            if (phase == HIO_PHASE_TLS_SERVER_HANDSHAKING) {
+                nio_accept_ready(io);
+            } else {
+                nio_connect_ready(io);
+            }
+        }
+        return;
+    }
+
+    if ((io->events & HV_READ) && (io->revents & HV_READ)) {
+        if (io->accept) {
+            nio_accept(io);
+        }
+        else {
+            nio_read(io);
+        }
+    }
+
+    if ((io->events & HV_WRITE) && (io->revents & HV_WRITE)) {
+        // NOTE: del HV_WRITE, if write_queue empty
+        hrecursive_mutex_lock(&io->write_mutex);
+        if (write_queue_empty(&io->write_queue)) {
+            hio_del(io, HV_WRITE);
+        }
+        hrecursive_mutex_unlock(&io->write_mutex);
+        if (io->connect) {
+            // NOTE: connect just do once
+            // ONESHOT
+            io->connect = 0;
+
+            nio_connect(io);
+        }
+        else {
+            nio_write(io);
+        }
+    }
+
+    io->revents = 0;
+}
+
+int hio_accept(hio_t* io) {
+    io->accept = 1;
+    io->phase = HIO_PHASE_ACCEPTING;
+    return hio_add(io, hio_handle_events, HV_READ);
+}
+
+int hio_connect(hio_t* io) {
+    io->phase = HIO_PHASE_CONNECTING;
+    io->cb = (hevent_cb)hio_handle_events;
+    int ret = connect(io->fd, io->peeraddr, SOCKADDR_LEN(io->peeraddr));
+#ifdef OS_WIN
+    if (ret < 0 && socket_errno() != WSAEWOULDBLOCK) {
+#else
+    if (ret < 0 && socket_errno() != EINPROGRESS) {
+#endif
+        perror("connect");
+        io->error = socket_errno();
+        hio_close_async(io);
+        return ret;
+    }
+    if (ret == 0) {
+        // connect ok
+        nio_connect_async(io);
+        return 0;
+    }
+    int timeout = io->connect_timeout ? io->connect_timeout : HIO_DEFAULT_CONNECT_TIMEOUT;
+    io->connect_timer = htimer_add(io->loop, __connect_timeout_cb, timeout, 1);
+    io->connect_timer->privdata = io;
+    io->connect = 1;
+    return hio_add(io, hio_handle_events, HV_WRITE);
+}
+
+int hio_read (hio_t* io) {
+    if (io->closed) {
+        hloge("hio_read called but fd[%d] already closed!", io->fd);
+        return -1;
+    }
+    hio_add(io, hio_handle_events, HV_READ);
+    if (io->readbuf.tail > io->readbuf.head &&
+        io->unpack_setting == NULL &&
+        io->read_flags == 0) {
+        hio_read_remain(io);
+    }
+    return 0;
+}
+
+static int hio_write4 (hio_t* io, const void* buf, size_t len, struct sockaddr* addr) {
+    if (io->closed) {
+        hloge("hio_write called but fd[%d] already closed!", io->fd);
+        return -1;
+    }
+    int nwrite = 0, err = 0;
+    hrecursive_mutex_lock(&io->write_mutex);
+#if WITH_KCP
+    if (io->io_type == HIO_TYPE_KCP) {
+        nwrite = hio_write_kcp(io, buf, len, addr);
+        // if (nwrite < 0) goto write_error;
+        goto write_done;
+    }
+#endif
+    if (write_queue_empty(&io->write_queue)) {
+        if (nio_is_establishing(io)) {
+            nwrite = 0;
+            goto enqueue;
+        }
+try_write:
+        nwrite = __nio_write(io, buf, len, addr);
+        // printd("write retval=%d\n", nwrite);
+        if (nwrite < 0) {
+            err = socket_errno();
+            if (err == EAGAIN || err == EINTR) {
+                nwrite = 0;
+                hlogw("try_write failed, enqueue!");
+                goto enqueue;
+            } else {
+                // perror("write");
+                io->error = err;
+                goto write_error;
+            }
+        }
+        if (nwrite == len) {
+            goto write_done;
+        }
+        if (nwrite == 0 && (io->io_type & HIO_TYPE_SOCK_STREAM)) {
+            goto disconnect;
+        }
+enqueue:
+        if (!nio_is_establishing(io)) {
+            hio_add(io, hio_handle_events, HV_WRITE);
+        }
+    }
+    if (nwrite < len) {
+        size_t unwritten_len = len - nwrite;
+        if (io->write_bufsize + unwritten_len > io->max_write_bufsize) {
+            hloge("write bufsize > %u, close it!", io->max_write_bufsize);
+            io->error = ERR_OVER_LIMIT;
+            goto write_error;
+        }
+        size_t addrlen = 0;
+        if ((io->io_type & (HIO_TYPE_SOCK_DGRAM | HIO_TYPE_SOCK_RAW)) && addr) {
+            addrlen = SOCKADDR_LEN(addr);
+        }
+        offset_buf_t remain;
+        remain.offset = addrlen;
+        remain.len = addrlen + unwritten_len;
+        // NOTE: free in nio_write
+        HV_ALLOC(remain.base, remain.len);
+        if (addr && addrlen > 0) {
+            memcpy(remain.base, addr, addrlen);
+        }
+        memcpy(remain.base + remain.offset, ((char*)buf) + nwrite, unwritten_len);
+        if (io->write_queue.maxsize == 0) {
+            write_queue_init(&io->write_queue, 4);
+        }
+        write_queue_push_back(&io->write_queue, &remain);
+        io->write_bufsize += unwritten_len;
+        if (io->write_bufsize > WRITE_BUFSIZE_HIGH_WATER) {
+            hlogw("write len=%u enqueue %u, bufsize=%u over high water %u",
+                (unsigned int)len,
+                (unsigned int)unwritten_len,
+                (unsigned int)io->write_bufsize,
+                (unsigned int)WRITE_BUFSIZE_HIGH_WATER);
+        }
+    }
+write_done:
+    hrecursive_mutex_unlock(&io->write_mutex);
+    if (nwrite > 0) {
+        __write_cb(io, buf, nwrite);
+    }
+    return nwrite;
+write_error:
+disconnect:
+    hrecursive_mutex_unlock(&io->write_mutex);
+    /* NOTE:
+     * We usually free resources in hclose_cb,
+     * if hio_close_sync, we have to be very careful to avoid using freed resources.
+     * But if hio_close_async, we do not have to worry about this.
+     */
+    if (io->io_type & HIO_TYPE_SOCK_STREAM) {
+        hio_close_async(io);
+    }
+    return nwrite < 0 ? nwrite : -1;
+}
+
+int hio_write (hio_t* io, const void* buf, size_t len) {
+    return hio_write4(io, buf, len, io->peeraddr);
+}
+
+int hio_sendto (hio_t* io, const void* buf, size_t len, struct sockaddr* addr) {
+    return hio_write4(io, buf, len, addr ? addr : io->peeraddr);
+}
+
+int hio_close (hio_t* io) {
+    if (io->closed) return 0;
+    if (io->destroy == 0 && hv_gettid() != io->loop->tid) {
+        return hio_close_async(io);
+    }
+
+    hrecursive_mutex_lock(&io->write_mutex);
+    if (io->closed) {
+        hrecursive_mutex_unlock(&io->write_mutex);
+        return 0;
+    }
+    if (!write_queue_empty(&io->write_queue) && io->error == 0 && io->close == 0 && io->destroy == 0) {
+        io->close = 1;
+        hrecursive_mutex_unlock(&io->write_mutex);
+        hlogw("write_queue not empty, close later.");
+        int timeout_ms = io->close_timeout ? io->close_timeout : HIO_DEFAULT_CLOSE_TIMEOUT;
+        io->close_timer = htimer_add(io->loop, __close_timeout_cb, timeout_ms, 1);
+        io->close_timer->privdata = io;
+        return 0;
+    }
+    io->closed = 1;
+    hrecursive_mutex_unlock(&io->write_mutex);
+
+    hio_done(io);
+    __close_cb(io);
+    if (io->ssl) {
+        hssl_free(io->ssl);
+        io->ssl = NULL;
+    }
+    if (io->ssl_ctx && io->alloced_ssl_ctx) {
+        hssl_ctx_free(io->ssl_ctx);
+        io->ssl_ctx = NULL;
+    }
+    SAFE_FREE(io->hostname);
+    if (io->proxy) {
+        proxy_ctx_free(io->proxy);
+        io->proxy = NULL;
+    }
+    if (io->io_type & HIO_TYPE_SOCKET) {
+        closesocket(io->fd);
+    } else if (io->io_type == HIO_TYPE_PIPE) {
+        close(io->fd);
+    }
+    return 0;
+}

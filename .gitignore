@@ -53,5 +53,20 @@ cmake-build-*
 # Vs
 out
 .vs
+*.user
+*.suo
+bin/
+obj/
+lib/
+*.pdb
+*.idb
+*.exp
 
 .cache
+
+# Local downloads and tooling
+WSL/
+depots/
+filelist.txt
+DepotDownloader.exe
+

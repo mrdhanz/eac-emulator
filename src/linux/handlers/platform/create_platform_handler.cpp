@@ -14,7 +14,7 @@ void create_platform_handler::handle(std::shared_ptr<packet> packet) {
 	options.SandboxId = create_platform->sandbox_id.c_str();
 	options.ClientCredentials.ClientId = create_platform->client_credentials.client_id.c_str();
 	options.ClientCredentials.ClientSecret = create_platform->client_credentials.client_secret.c_str();
-	options.bIsServer = create_platform->is_server;
+	options.bIsServer = create_platform->is_server ? EOS_TRUE : EOS_FALSE;
 	options.EncryptionKey = create_platform->encryption_key.c_str();
 	options.OverrideCountryCode = create_platform->override_country_code.c_str();
 	options.OverrideLocaleCode = create_platform->override_locale_code.c_str();
@@ -23,15 +23,10 @@ void create_platform_handler::handle(std::shared_ptr<packet> packet) {
 	options.CacheDirectory = create_platform->cache_directory.c_str();
 	options.TickBudgetInMilliseconds = create_platform->tick_budget_in_milliseconds;
 
+	// RTC features are not needed for EAC/Connect emulation.
+	// Setting RTCOptions without PlatformSpecificOptions causes EOS_Platform_Create to fail with:
+	// "Invalid parameter EOS_Platform_RTCOptions.PlatformSpecificOptions reason: cannot be null".
 	options.RTCOptions = nullptr;
-	EOS_Platform_RTCOptions rtc_options{};
-	if (create_platform->has_rtc_options) {
-		rtc_options.ApiVersion = create_platform->rtc_options.api_version;
-		rtc_options.PlatformSpecificOptions = nullptr;
-		rtc_options.BackgroundMode = create_platform->rtc_options.background_mode;
-
-		options.RTCOptions = &rtc_options;
-	}
 
 	options.IntegratedPlatformOptionsContainerHandle = nullptr;
 	options.SystemSpecificOptions = nullptr;

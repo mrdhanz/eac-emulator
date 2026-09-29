@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "eos_api.h"
 
 #pragma pack(push, 8)
 
@@ -15,6 +16,7 @@ struct EOS_Platform_RTCOptions {
 	int32_t ApiVersion;
 	void* PlatformSpecificOptions;
 	int BackgroundMode;
+	void* Reserved;
 };
 
 struct EOS_Platform_Options {
@@ -23,7 +25,7 @@ struct EOS_Platform_Options {
 	const char* ProductId;
 	const char* SandboxId;
 	EOS_Platform_ClientCredentials ClientCredentials;
-	bool bIsServer;
+	EOS_Bool bIsServer;
 	const char* EncryptionKey;
 	const char* OverrideCountryCode;
 	const char* OverrideLocaleCode;
