@@ -37,8 +37,8 @@ Build outputs will be generated in:
 ## Setup Guides
 
 For detailed environment setup instructions, refer to:
-- [SETUP_GUIDE_WSL.md](file:///e:/Project/eac-emulator/SETUP_GUIDE_WSL.md) — Recommended guide for WSL2 (Ubuntu) with Proton.
-- [SETUP_GUIDE.md](file:///e:/Project/eac-emulator/SETUP_GUIDE.md) — Guide for standalone Linux Virtual Machines (VMware).
+- [SETUP_GUIDE_WSL.md](./SETUP_GUIDE_WSL.md) — Recommended guide for WSL2 (Ubuntu) with Proton.
+- [SETUP_GUIDE.md](./SETUP_GUIDE.md) — Guide for standalone Linux Virtual Machines (VMware).
 
 ## Libraries Used
 
