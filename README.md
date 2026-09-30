@@ -13,6 +13,13 @@ The project consists of two primary components built from [EOSEmulator.sln](file
 
 Target game process and EOS SDK module paths are automatically detected at runtime, eliminating the need to hardcode game-specific executables or directories.
 
+# Getting started
+## Cloning
+
+```
+git clone https://github.com/mrdhanz/eac-emulator.git
+```
+
 ## Building
 
 ### Requirements
