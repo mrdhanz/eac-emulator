@@ -11,7 +11,7 @@ The project consists of two primary components built from [EOSEmulator.sln](file
 2. **`version.dll`** (Linux / Proton Server):
    A proxy DLL loaded via `WINEDLLOVERRIDES` in Proton/Wine alongside the target game executable. Hosts the HTTP/WebSocket servers and forwards anticheat and platform session state to the real Linux EOS environment.
 
-Configuration (target game process and DLL path) can be customized in [src/common/constants.h](file:///e:/Project/eac-emulator/src/common/constants.h) (default: `SpiritVale.exe`).
+Target game process and EOS SDK module paths are automatically detected at runtime, eliminating the need to hardcode game-specific executables or directories.
 
 ## Building
 

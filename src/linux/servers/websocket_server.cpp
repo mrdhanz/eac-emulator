@@ -1,6 +1,5 @@
 #include "websocket_server.h"
 
-#include <common/constants.h>
 #include <common/protocol/packet_codec.h>
 #include <hv/WebSocketServer.h>
 #include <plog/Log.h>

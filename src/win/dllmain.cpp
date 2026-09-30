@@ -12,10 +12,11 @@ void init() {
 	exception_handler::init();
 	utils::create_console();
 	printf("Console Initialized\n");
+	printf("Detected Game Process: %s\n", utils::get_current_process_name().c_str());
 }
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID) {
-	if (fdwReason == DLL_PROCESS_ATTACH && GetModuleHandleA(GAME_HANDLE_NAME) != nullptr) {
+	if (fdwReason == DLL_PROCESS_ATTACH && utils::is_game_process()) {
 		init();
 	}
 	return TRUE;

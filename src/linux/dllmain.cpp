@@ -16,14 +16,14 @@ BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID) {
 	}
 	forwarder::setup();
 
-	bool isRunningOnGameProcess = GetModuleHandleA(GAME_HANDLE_NAME) != nullptr;
-	if (!isRunningOnGameProcess) {
+	if (!utils::is_game_process()) {
 		return TRUE;
 	}
 	exception_handler::init();
 
 	utils::create_console();
 	printf("Console Initialized\n");
+	printf("Detected Game Process: %s\n", utils::get_current_process_name().c_str());
 	std::optional<std::string> config = utils::read_file("config.json");
 	if (!config.has_value()) {
 		nlohmann::json json;
