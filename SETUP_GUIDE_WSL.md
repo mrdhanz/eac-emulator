@@ -93,8 +93,8 @@ Once running, `version.dll` starts an HTTP server on port 7778 and a WebSocket s
        }
    }
    ```
-   > [!NOTE]
-   > With WSL2 localhost forwarding (default), `127.0.0.1` connects directly to WSL services. If you have custom networking or NAT enabled, use the WSL IP obtained via `ip addr show eth0`.
+> [!NOTE]
+> With WSL2 localhost forwarding (default), `127.0.0.1` connects directly to WSL services. If you have custom networking or NAT enabled, use the WSL IP obtained via `ip addr show eth0`.
 
 ---
 
