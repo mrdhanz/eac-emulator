@@ -1,10 +1,10 @@
+#include <plog/Log.h>
 #include "websocket_client.h"
 
 #include <format>
 #include <functional>
 
 #include "common/protocol/packet_codec.h"
-#include "plog/Log.h"
 
 void websocket_client::handle_receive(std::string const& msg) {
 	read_stream stream(msg.data(), msg.size());

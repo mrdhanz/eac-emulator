@@ -45,7 +45,7 @@ void addAdditionalInfo(ExceptionMetadata& metadata, EXCEPTION_RECORD* record) {
 		return;
 	}
 	metadata.additionalInfo["violation_type"] = record->ExceptionInformation[0];
-	metadata.additionalInfo["violation_type_name"] = win64::exception::violationType(record->ExceptionInformation[0]);
+	metadata.additionalInfo["violation_type_name"] = win64::exception::violationType(static_cast<uint32_t>(record->ExceptionInformation[0]));
 	metadata.additionalInfo["address"] = static_cast<uint64_t>(record->ExceptionInformation[1]);
 	if (isInPageError) {
 		metadata.additionalInfo["status_code"] = record->ExceptionInformation[2];

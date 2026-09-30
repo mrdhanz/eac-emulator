@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#if defined(__x86_64__) || defined(__ppc64__)
+#if defined(__x86_64__) || defined(__ppc64__) || defined(_M_X64) || defined(_M_AMD64) || defined(_WIN64)
 #define CRASHLOG_64BIT_ADDR
 #else
 #define CRASHLOG_32BIT_ADDR

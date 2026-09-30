@@ -1,5 +1,6 @@
 #pragma once
 
+#include <plog/Log.h>
 #include <hv/WebSocketClient.h>
 
 #include <memory>

@@ -120,11 +120,9 @@ void websocket_server::performSend() {
 	std::lock_guard send_lock(send_mutex);
 	for (auto& packet : send_queued_packets) {
 		write_stream stream = packet_codec::encode(packet);
-		auto buf = stream.as_buffer();
-		for (auto channel : channels_snapshot) {
-			channel->send(static_cast<char*>(buf.data), buf.size, WS_OPCODE_BINARY);
+		for (auto& channel : channels_snapshot) {
+			channel->send(stream.data(), static_cast<int>(stream.size()), WS_OPCODE_BINARY);
 		}
-		buf.free();
 	}
 	send_queued_packets.clear();
 }

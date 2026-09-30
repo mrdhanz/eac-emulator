@@ -1,5 +1,6 @@
 #pragma once
 
+#include <plog/Log.h>
 #include <condition_variable>
 #include <memory>
 #include <mutex>

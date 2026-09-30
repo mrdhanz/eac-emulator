@@ -18,7 +18,8 @@ public:
 			case EOS_LOG_Info:
 				PLOGI.printf("[%s] %s", message->category, message->message);
 				break;
-			case EOS_LOG_Verbose | EOS_LOG_VeryVerbose:
+			case EOS_LOG_Verbose:
+			case EOS_LOG_VeryVerbose:
 				PLOGV.printf("[%s] %s", message->category, message->message);
 				break;
 			default:

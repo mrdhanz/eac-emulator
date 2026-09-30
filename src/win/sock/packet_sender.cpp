@@ -19,9 +19,7 @@ void packet_sender::run_loopback() {
 
 		for (auto& packet : pending_packets) {
 			write_stream stream = packet_codec::encode(packet);
-			auto buf = stream.as_buffer();
-			websocket_client.send(static_cast<char*>(buf.data), buf.size, WS_OPCODE_BINARY);
-			buf.free();
+			websocket_client.send(stream.data(), static_cast<int>(stream.size()), WS_OPCODE_BINARY);
 			PLOGD.printf("Packet sent: name=%s id=%d", packet->get_name().c_str(), packet->get_id());
 		}
 	}

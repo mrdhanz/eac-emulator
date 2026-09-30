@@ -1,3 +1,4 @@
+#include <plog/Log.h>
 #include "emulator_client.h"
 
 #include <memory>
@@ -47,16 +48,20 @@ std::shared_ptr<response> emulator_client::_request(std::shared_ptr<request> con
 	nlohmann::json json;
 	try {
 		json = nlohmann::json::parse(res->body);
+		if (!json.contains("id")) {
+			PLOGE.printf("[HTTP] Response missing 'id' field");
+			return nullptr;
+		}
+		auto response = session_factory::create_response(json["id"]);
+		if (response == nullptr) {
+			PLOGF.printf("Invalid request id: %d", (unsigned char)json["id"]);
+			return nullptr;
+		}
+		response->deserialize(json);
+		PLOGI.printf("[HTTP] Response received: %s", json.dump().c_str());
+		return response;
 	} catch (const std::exception& e) {
 		PLOGE.printf("[HTTP] Failed to parse response JSON: %s", e.what());
 		return nullptr;
 	}
-	PLOGI.printf("[HTTP] Response received: %s", json.dump().c_str());
-	auto response = session_factory::create_response(json["id"]);
-	if (response == nullptr) {
-		PLOGF.printf("Invalid request id: %d", (unsigned char)json["id"]);
-		return nullptr;
-	}
-	response->deserialize(json);
-	return response;
 }

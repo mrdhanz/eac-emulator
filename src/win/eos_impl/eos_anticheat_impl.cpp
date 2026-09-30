@@ -54,11 +54,13 @@ DummyEOS_AntiCheatClient_EndSession(EOS_HAntiCheatClient handle, const EOS_AntiC
 
 EOS_DECLARE_FUNC(EOS_EResult)
 DummyEOS_AntiCheatClient_ReceiveMessageFromServer(EOS_HAntiCheatClient handle, const EOS_AntiCheatClient_ReceiveMessageFromServerOptions* options) {
-	std::vector<char> message_bytes;
-	for (int i = 0; i < options->DataLengthBytes; i++) {
-		message_bytes.push_back(static_cast<const char*>(options->Data)[i]);
+	if (options == nullptr) {
+		return 1;
 	}
-	auto message_base64 = base64::encode_into<std::string>(message_bytes.begin(), message_bytes.end());
+	const auto* bytes = static_cast<const char*>(options->Data);
+	auto message_base64 = (bytes != nullptr && options->DataLengthBytes > 0)
+		? base64::encode_into<std::string>(bytes, bytes + options->DataLengthBytes)
+		: std::string();
 
 	auto packet = std::make_shared<receive_message_packet>();
 	packet->api_version = options->ApiVersion;

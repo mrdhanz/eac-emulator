@@ -8,11 +8,11 @@
 #include "common/protocol/packets/notify_message_to_server_packet.h"
 
 void notify_message_to_server_callback(const EOS_AntiCheatClient_OnMessageToServerCallbackInfo* data) {
-	std::vector<char> message_bytes;
-	for (int i = 0; i < data->MessageDataSizeBytes; i++) {
-		message_bytes.push_back(static_cast<const char*>(data->MessageData)[i]);
+	if (data == nullptr || data->MessageData == nullptr || data->MessageDataSizeBytes == 0) {
+		return;
 	}
-	auto message_base64 = base64::encode_into<std::string>(message_bytes.begin(), message_bytes.end());
+	const auto* bytes = static_cast<const char*>(data->MessageData);
+	auto message_base64 = base64::encode_into<std::string>(bytes, bytes + data->MessageDataSizeBytes);
 
 	auto packet = std::make_shared<notify_message_to_server_packet>();
 	packet->require_bind = false;

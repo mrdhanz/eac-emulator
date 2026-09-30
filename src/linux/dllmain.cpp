@@ -11,10 +11,13 @@
 #include "json.hpp"
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID) {
+	if (fdwReason != DLL_PROCESS_ATTACH) {
+		return TRUE;
+	}
 	forwarder::setup();
 
 	bool isRunningOnGameProcess = GetModuleHandleA(GAME_HANDLE_NAME) != nullptr;
-	if (fdwReason != DLL_PROCESS_ATTACH || !isRunningOnGameProcess) {
+	if (!isRunningOnGameProcess) {
 		return TRUE;
 	}
 	exception_handler::init();

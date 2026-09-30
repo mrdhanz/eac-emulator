@@ -10,10 +10,18 @@ class write_stream {
 public:
     std::vector<char> buffer;
 
+    const char* data() const noexcept {
+        return buffer.data();
+    }
+
+    size_t size() const noexcept {
+        return buffer.size();
+    }
+
     void write(const void* data, size_t size) {
-        for (size_t i = 0; i < size; i++) {
-            const char* at = static_cast<const char*>(data) + i;
-            buffer.push_back(*at);
+        if (data != nullptr && size > 0) {
+            const auto* bytes = static_cast<const char*>(data);
+            buffer.insert(buffer.end(), bytes, bytes + size);
         }
     }
 
@@ -29,13 +37,13 @@ public:
     	}
 
     	write_as<char>(1); // is valid
-    	short len = strlen(string.c_str());
+    	const int len = static_cast<int>(string.length());
     	write_as<int>(len);
     	if (len == 0) {
     		return;
     	}
 
-    	write(string.c_str(), string.length());
+    	write(string.c_str(), static_cast<size_t>(len));
     }
 
     ::buffer as_buffer() const {
