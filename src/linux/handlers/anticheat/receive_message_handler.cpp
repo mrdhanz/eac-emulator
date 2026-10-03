@@ -15,7 +15,19 @@ void receive_message_handler::handle(std::shared_ptr<packet> packet) {
 		return;
 	}
 
-	auto decoded = base64::decode_into<std::vector<char>>(receive_message->base64_message.c_str());
+	const char* b64_str = receive_message->base64_message.c_str();
+	if (b64_str == nullptr) {
+		if (receive_message->data_length_bytes == 0) {
+			EOS_AntiCheatClient_ReceiveMessageFromServerOptions options{};
+			options.ApiVersion = receive_message->api_version;
+			options.Data = nullptr;
+			options.DataLengthBytes = 0;
+			eos_anticheat::receive_message_from_server(anticheat_interface, options);
+		}
+		return;
+	}
+
+	auto decoded = base64::decode_into<std::vector<char>>(b64_str);
 	if (decoded.size() != receive_message->data_length_bytes) {
 		PLOGE.printf("Decoded message size does not match message data size: %d != %d", decoded.size(), receive_message->data_length_bytes);
 		return;

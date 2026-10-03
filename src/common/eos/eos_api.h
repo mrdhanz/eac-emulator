@@ -3,6 +3,8 @@
 #include <cstdint>
 
 #define EOS_Success 0
+#define EOS_InvalidParameters 1
+#define EOS_LimitExceeded 3
 #define EOS_NS_Online 2
 
 #define EOS_EResult int

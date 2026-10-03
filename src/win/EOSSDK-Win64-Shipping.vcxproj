@@ -64,7 +64,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalIncludeDirectories>$(SolutionDir)dependencies\plog\include;$(SolutionDir)includes;$(SolutionDir)src;$(SolutionDir)dependencies\minhook\include;$(SolutionDir)dependencies\libhv\include;$(SolutionDir)dependencies\crashlog\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -85,7 +85,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <AdditionalIncludeDirectories>$(SolutionDir)dependencies\plog\include;$(SolutionDir)includes;$(SolutionDir)src;$(SolutionDir)dependencies\minhook\include;$(SolutionDir)dependencies\libhv\include;$(SolutionDir)dependencies\crashlog\includes;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>

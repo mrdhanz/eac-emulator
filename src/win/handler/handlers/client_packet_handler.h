@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include "../handler_registry.h"
 #include "../packet_handler.h"
@@ -19,8 +21,9 @@ class client_packet_handler : public packet_handler {
 	std::weak_ptr<packet_sender> sender;
 	handler_registry registry;
 
+	static inline std::atomic<EOS_NotificationId> next_notification_id{ 1 };
 	static inline std::mutex notify_message_to_server_callbacks_mutex;
-	static inline std::vector<notify_message_to_server_callback> notify_message_to_server_callbacks;
+	static inline std::unordered_map<EOS_NotificationId, notify_message_to_server_callback> notify_message_to_server_callbacks;
 
 public:
 	client_packet_handler(std::weak_ptr<packet_sender> sender);
@@ -29,7 +32,9 @@ public:
 
 	handler_registry& get_handler_registry() override;
 
-	static void add_notify_message_to_server(notify_message_to_server_callback callback);
+	static EOS_NotificationId add_notify_message_to_server(notify_message_to_server_callback callback);
+
+	static void remove_notify_message_to_server(EOS_NotificationId notification_id);
 
 	static void replay_notify_message_to_server_bindings();
 

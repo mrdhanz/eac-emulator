@@ -100,9 +100,13 @@ DummyEOS_Logging_SetLogLevel(int category, int level) {
 
 EOS_DECLARE_FUNC(EOS_EResult)
 DummyEOS_ProductUserId_ToString(EOS_ProductUserId account_id, char* out_buffer, int32_t* in_out_buffer_length) {
+	if (in_out_buffer_length == nullptr) {
+		return EOS_InvalidParameters;
+	}
+
 	auto* client = emulator_client::get_instance();
 	if (client == nullptr) {
-		return 1;
+		return EOS_InvalidParameters;
 	}
 
 	auto request = std::make_shared<id2string_request>();
@@ -110,18 +114,24 @@ DummyEOS_ProductUserId_ToString(EOS_ProductUserId account_id, char* out_buffer, 
 
 	auto response = client->send_request<id2string_response>(request);
 	if (response == nullptr) {
-		return 1;
+		return EOS_InvalidParameters;
 	}
-	auto buffer = response->buffer;
-	auto buffer_size = response->buffer_size;
-	if (buffer != nullptr && out_buffer != nullptr && in_out_buffer_length != nullptr) {
-		ZeroMemory(out_buffer, *in_out_buffer_length);
-		memcpy(out_buffer, buffer.c_str(), buffer_size + 1);
+
+	const char* str = response->buffer.c_str();
+	const int32_t required_len = str != nullptr ? static_cast<int32_t>(strlen(str)) + 1 : 1;
+
+	if (out_buffer == nullptr || *in_out_buffer_length < required_len) {
+		*in_out_buffer_length = required_len;
+		return EOS_LimitExceeded;
 	}
-	if (in_out_buffer_length != nullptr) {
-		*in_out_buffer_length = buffer_size;
+
+	if (str != nullptr) {
+		memcpy(out_buffer, str, required_len);
+	} else {
+		out_buffer[0] = '\0';
 	}
-	PLOGI.printf("Writing: ProductUserId=%s len=%d", buffer.c_str(), buffer_size);
+	*in_out_buffer_length = required_len;
+	PLOGI.printf("Writing: ProductUserId=%s len=%d", str ? str : "", required_len);
 
 	return response->result;
 }

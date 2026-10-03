@@ -32,16 +32,25 @@ handler_registry& client_packet_handler::get_handler_registry() {
 	return registry;
 }
 
-void client_packet_handler::add_notify_message_to_server(notify_message_to_server_callback callback) {
+EOS_NotificationId client_packet_handler::add_notify_message_to_server(notify_message_to_server_callback callback) {
 	std::lock_guard lock(notify_message_to_server_callbacks_mutex);
-	notify_message_to_server_callbacks.push_back(callback);
+	EOS_NotificationId id = next_notification_id++;
+	notify_message_to_server_callbacks[id] = callback;
+	return id;
+}
+
+void client_packet_handler::remove_notify_message_to_server(EOS_NotificationId notification_id) {
+	std::lock_guard lock(notify_message_to_server_callbacks_mutex);
+	notify_message_to_server_callbacks.erase(notification_id);
 }
 
 void client_packet_handler::replay_notify_message_to_server_bindings() {
 	std::vector<notify_message_to_server_callback> callbacks;
 	{
 		std::lock_guard lock(notify_message_to_server_callbacks_mutex);
-		callbacks = notify_message_to_server_callbacks;
+		for (const auto& [id, cb] : notify_message_to_server_callbacks) {
+			callbacks.push_back(cb);
+		}
 	}
 
 	if (callbacks.empty()) {
@@ -69,7 +78,12 @@ void client_packet_handler::handle_handshake(std::shared_ptr<packet> packet) {
 
 void client_packet_handler::handle_notify_msg_to_server(std::shared_ptr<packet> packet) {
 	auto notify_message_to_server = std::static_pointer_cast<notify_message_to_server_packet>(packet);
-	auto decoded = base64::decode_into<std::vector<char>>(notify_message_to_server->base64_message_data.c_str());
+	const char* b64_str = notify_message_to_server->base64_message_data.c_str();
+	if (b64_str == nullptr) {
+		return;
+	}
+
+	auto decoded = base64::decode_into<std::vector<char>>(b64_str);
 	if (decoded.size() != notify_message_to_server->message_data_size) {
 		PLOGE.printf("Decoded message size does not match message data size");
 		return;
@@ -78,15 +92,19 @@ void client_packet_handler::handle_notify_msg_to_server(std::shared_ptr<packet> 
 	std::vector<notify_message_to_server_callback> callbacks;
 	{
 		std::lock_guard lock(notify_message_to_server_callbacks_mutex);
-		callbacks = notify_message_to_server_callbacks;
+		for (const auto& [id, cb] : notify_message_to_server_callbacks) {
+			callbacks.push_back(cb);
+		}
 	}
 
 	for (auto& callback : callbacks) {
-		EOS_AntiCheatClient_OnMessageToServerCallbackInfo info{};
-		info.ClientData = callback.client_data;
-		info.MessageData = decoded.data();
-		info.MessageDataSizeBytes = notify_message_to_server->message_data_size;
-		callback.notification_fn(&info);
+		if (callback.notification_fn != nullptr) {
+			EOS_AntiCheatClient_OnMessageToServerCallbackInfo info{};
+			info.ClientData = callback.client_data;
+			info.MessageData = decoded.data();
+			info.MessageDataSizeBytes = notify_message_to_server->message_data_size;
+			callback.notification_fn(&info);
+		}
 	}
 }
 

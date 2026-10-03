@@ -51,8 +51,14 @@ void websocket_client::run(std::string const& server_address, int port) {
 	client.setReconnect(&reconn);
 
 	client.open(wsAddress.c_str());
-	while (!client.isConnected()) {
+	constexpr int max_retries = 50;  // 5 seconds initial connection attempt
+	int retries = 0;
+	while (!client.isConnected() && retries < max_retries) {
 		Sleep(100);
+		retries++;
+	}
+	if (!client.isConnected()) {
+		PLOGW.printf("Initial connection to emulator server at %s timed out. Background reconnection active.", wsAddress.c_str());
 	}
 }
 

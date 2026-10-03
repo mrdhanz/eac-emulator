@@ -60,7 +60,7 @@
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <AdditionalIncludeDirectories>.;include;3rd\include;src;base;ssl;event;event\wepoll;util;cpputil;evpp;http;http\server;http\client;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -76,7 +76,7 @@
       <PreprocessorDefinitions>NDEBUG;WIN32;_WINDOWS;HV_STATICLIB;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>false</ConformanceMode>
       <AdditionalIncludeDirectories>.;include;3rd\include;src;base;ssl;event;event\wepoll;util;cpputil;evpp;http;http\server;http\client;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <ResourceCompile>

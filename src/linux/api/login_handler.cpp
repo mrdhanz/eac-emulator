@@ -32,18 +32,23 @@ void EOS_CALL request_login_callback(const EOS_Connect_LoginCallbackInfo* data) 
 std::shared_ptr<response> login_handler::handle(std::shared_ptr<request> request) {
 	auto request_login = std::static_pointer_cast<login_request>(request);
 
+	auto safe_str = [](const nullable_string& ns) -> std::string {
+		const char* s = ns.c_str();
+		return s != nullptr ? std::string(s) : std::string("<null>");
+	};
+
 	std::string logText = "Processing Login:\n";
 	if (request_login->has_credentials) {
 		logText.append(" - Credentials\n");
 		logText.append(std::format("    ApiVersion: {}\n", request_login->credentials.ApiVersion));
 		logText.append(std::format("    Type: {}\n", request_login->credentials.Type));
-		logText.append(std::format("    Token: {}\n", request_login->credentials.Token.c_str()));
+		logText.append(std::format("    Token: {}\n", safe_str(request_login->credentials.Token)));
 	}
 	if (request_login->has_login_info) {
 		logText.append(" - Login Info\n");
 		logText.append(std::format("    ApiVersion: {}\n", request_login->user_login_info.ApiVersion));
-		logText.append(std::format("    DisplayName: {}\n", request_login->user_login_info.DisplayName.c_str()));
-		logText.append(std::format("    NsaIdToken: {}", request_login->user_login_info.NsaIdToken.c_str()));
+		logText.append(std::format("    DisplayName: {}\n", safe_str(request_login->user_login_info.DisplayName)));
+		logText.append(std::format("    NsaIdToken: {}", safe_str(request_login->user_login_info.NsaIdToken)));
 	}
 	PLOGI.printf("%s", logText.c_str());
 
@@ -87,5 +92,13 @@ std::shared_ptr<response> login_handler::handle(std::shared_ptr<request> request
 	}
 
 	eos_connect::login(connect_interface, options, &lock, &request_login_callback);
-	return lock.wait();
+	auto res = lock.wait();
+	if (res == nullptr) {
+		PLOGE.printf("Login timed out waiting for EOS callback");
+		res = std::make_shared<login_response>();
+		res->result_code = -1;
+		res->local_user_id = 0;
+		res->continuance_token = 0;
+	}
+	return res;
 }

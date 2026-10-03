@@ -148,7 +148,7 @@ int WebSocketClient::open(const char* _url, const http_headers& headers) {
                 }
                 ws_parser_ = std::make_shared<WebSocketParser>();
                 // websocket_onmessage
-                ws_parser_->onMessage = [this, &channel](int opcode, const std::string& msg) {
+                ws_parser_->onMessage = [this, channel](int opcode, const std::string& msg) {
                     channel->opcode = (enum ws_opcode)opcode;
                     switch (opcode) {
                     case WS_OPCODE_CLOSE:

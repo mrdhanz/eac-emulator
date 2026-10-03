@@ -5,6 +5,7 @@
 #include <common/api/session_factory.h>
 #include <hv/HttpServer.h>
 
+#include <plog/Log.h>
 #include <json.hpp>
 #include <thread>
 
@@ -13,24 +14,44 @@
 void http_server::init() {
 	HttpService router;
 	router.POST("/task", [](HttpRequest* req, HttpResponse* resp) {
-		nlohmann::json json = nlohmann::json::parse(req->body);
-		auto request = session_factory::create_request(json["id"]);
-		if (request == nullptr) {
-			PLOGF.printf("Invalid request id: %s", json["id"].get<std::string>().c_str());
-			return resp->String(nlohmann::json({{"status", "error"}}).dump());
+		try {
+			if (req->body.empty()) {
+				return resp->String(nlohmann::json({{"status", "error"}, {"message", "Empty request body"}}).dump());
+			}
+
+			nlohmann::json json = nlohmann::json::parse(req->body);
+			if (!json.contains("id") || !json["id"].is_number()) {
+				PLOGE.printf("Request missing numeric 'id' field: %s", req->body.c_str());
+				return resp->String(nlohmann::json({{"status", "error"}, {"message", "Missing numeric 'id' field"}}).dump());
+			}
+
+			auto request_id = json["id"].get<unsigned char>();
+			auto request = session_factory::create_request(request_id);
+			if (request == nullptr) {
+				PLOGE.printf("Invalid request id: %d", static_cast<int>(request_id));
+				return resp->String(nlohmann::json({{"status", "error"}, {"message", "Invalid request id"}}).dump());
+			}
+			request->deserialize(json);
+
+			auto handler = api_handler_registry::get_handler_by_id(request->get_id());
+			if (handler == nullptr) {
+				PLOGE.printf("No handler registered for request id: %d", static_cast<int>(request->get_id()));
+				return resp->String(nlohmann::json({{"status", "error"}, {"message", "No handler registered"}}).dump());
+			}
+			auto response = handler(request);
+			if (response == nullptr) {
+				PLOGE.printf("Handler returned null response for request id: %d", static_cast<int>(request->get_id()));
+				return resp->String(nlohmann::json({{"status", "error"}, {"message", "Handler returned null"}}).dump());
+			}
+
+			nlohmann::json output_json;
+			response->serialize(output_json);
+
+			return resp->String(output_json.dump());
+		} catch (const std::exception& e) {
+			PLOGE.printf("[HTTP] Exception in /task handler: %s", e.what());
+			return resp->String(nlohmann::json({{"status", "error"}, {"message", e.what()}}).dump());
 		}
-		request->deserialize(json);
-
-		auto handler = api_handler_registry::get_handler_by_id(request->get_id());
-		if (handler == nullptr) {
-			return resp->String(nlohmann::json({{"status", "error"}}).dump());
-		}
-		auto response = handler(request);
-
-		nlohmann::json output_json;
-		response->serialize(output_json);
-
-		return resp->String(output_json.dump());
 	});
 
 	hv::HttpServer server(&router);

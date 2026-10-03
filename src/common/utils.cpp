@@ -124,15 +124,22 @@ bool utils::is_game_process() {
 		return static_cast<char>(std::tolower(c));
 	});
 
-	// Ignore known crash handlers, setup utilities, and anti-cheat launchers
+	// Ignore known crash handlers, setup utilities, Wine system processes, and anti-cheat launchers
 	if (lower_name.find("crashhandler") != std::string::npos ||
 		lower_name.find("crashpad") != std::string::npos ||
 		lower_name.find("easyanticheat") != std::string::npos ||
+		lower_name.find("eac_launcher") != std::string::npos ||
+		lower_name.find("eaclauncher") != std::string::npos ||
+		lower_name.find("eosbootstrapper") != std::string::npos ||
 		lower_name.find("start_protected_game") != std::string::npos ||
-		lower_name.find("eac") != std::string::npos ||
-		lower_name.find("eos") != std::string::npos ||
-		lower_name.find("launch") != std::string::npos ||
-		lower_name.find("install") != std::string::npos) {
+		lower_name.find("installer") != std::string::npos ||
+		lower_name == "explorer.exe" ||
+		lower_name == "services.exe" ||
+		lower_name == "winedbg.exe" ||
+		lower_name == "winedevice.exe" ||
+		lower_name == "plugplay.exe" ||
+		lower_name == "rpcss.exe" ||
+		lower_name == "conhost.exe") {
 		return false;
 	}
 
@@ -172,7 +179,7 @@ bool utils::is_game_process() {
 		return true;
 	}
 
-	return true;
+	return false;
 }
 
 std::optional<std::filesystem::path> utils::detect_eos_sdk_path(const std::string& module_name) {
